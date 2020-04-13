@@ -1,3 +1,0 @@
-Messaggio da criptare:
-CIAO!
-Fine messaggio.
