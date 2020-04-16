@@ -9,7 +9,9 @@
 using namespace std;
 
 class AsymmetricEncrypter {
+
   public:
+
     int encrypt(string pubkey_file_name, string messageToEncrypt) {
 
       // c_str(): Returns a pointer to an array that contains a null-terminated sequence of characters (i.e., a C-string) representing the current value of the string object.
@@ -78,6 +80,9 @@ class AsymmetricEncrypter {
       nctot += nc;
       int cphr_size = nctot;
 
+      cout << "DEBUG| Encrypted message: "<<endl;
+      BIO_dump_fp (stdout, (const char *)cphr_buf, cphr_size);
+
       // delete the symmetric key and the plaintext from memory:
       EVP_CIPHER_CTX_free(ctx);
       #pragma optimize("", off)
@@ -107,7 +112,6 @@ class AsymmetricEncrypter {
 
       return 0;
     }
-
 
     string decrypt(string prvkey_file_name, string cphr_file_name) {
       int ret; // used for return values
@@ -182,7 +186,7 @@ class AsymmetricEncrypter {
       EVP_PKEY_free(prvkey);
 
       // convert the plaintext to string:
-      string message( reinterpret_cast< char const* >(clear_buf) ) ;//<--------------------------------------- VA ELIMINATO DOPO CHE E' STATO USATO?
+      string message( reinterpret_cast< char const* >(clear_buf) ) ;
 
       // delete the plaintext from memory:
       #pragma optimize("", off)
@@ -198,11 +202,12 @@ class AsymmetricEncrypter {
       //return the message:
       return message;
     }
+    
 };
 
 int main() {
     AsymmetricEncrypter ae;
-    ae.encrypt("public_key.pem", "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii bla bla bla bla mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm");
+    ae.encrypt("public_key.pem", "0000000000000000000000000 iiiiiiiiiiiiiiiiiiiiiiiiiiiii bla bla bla bla mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm");
     string message = ae.decrypt("private_key.pem", "encrypted_message.enc");
     cout << "The decrypted message is: '"<< message << "'\n";
 
