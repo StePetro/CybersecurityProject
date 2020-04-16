@@ -11,6 +11,12 @@ using namespace std;
 class AsymmetricEncrypter {
   public:
     int encrypt(string pubkey_file_name, string messageToEncrypt) {
+
+      // c_str(): Returns a pointer to an array that contains a null-terminated sequence of characters (i.e., a C-string) representing the current value of the string object.
+      //          This array includes the same sequence of characters that make up the value of the string object plus an additional terminating null-character ('\0') at the end.
+
+      cout << "DEBUG| Message: " << messageToEncrypt.c_str() << "\n";
+
       int ret; // used for return values
 
       // load the peer's public key:
@@ -21,7 +27,9 @@ class AsymmetricEncrypter {
       if (!pubkey) { cerr << "Error: PEM_read_PUBKEY returned NULL\n"; exit(1); }
 
       // get the message size:
-      long int clear_size = sizeof messageToEncrypt;
+      long int clear_size = messageToEncrypt.size() + 1; // + 1 for the string terminator
+
+      cout << "DEBUG| clear message size: " << clear_size << "\n";
 
       // read the plaintext from "messageToEncrypt":
       unsigned char* clear_buf = (unsigned char*)malloc(clear_size);
@@ -194,7 +202,7 @@ class AsymmetricEncrypter {
 
 int main() {
     AsymmetricEncrypter ae;
-    ae.encrypt("public_key.pem", "Messaggio di prova 00000");
+    ae.encrypt("public_key.pem", "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii bla bla bla bla mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm");
     string message = ae.decrypt("private_key.pem", "encrypted_message.enc");
     cout << "The decrypted message is: '"<< message << "'\n";
 
