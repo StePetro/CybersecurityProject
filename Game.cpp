@@ -1,4 +1,7 @@
 #include <iostream>
+#include <string>
+#include <sstream>
+
 
 using namespace std;
 
@@ -7,6 +10,7 @@ class Game{
 
     static const size_t WIDTH = 7;
     static const size_t HEIGHT = 6;
+
 
     //allocates a 2 dimentional array and initializes it with ' '
     char** createBoard(){
@@ -22,6 +26,7 @@ class Game{
       return ret;
     }
 
+
     // deallocates the two dimentional array
     void deleteBoard(char** board){
 
@@ -30,6 +35,7 @@ class Game{
       }
       delete[] board;
     }
+
 
     // prints the board with rows in reverse order
     /*     [5][0] [5][1]
@@ -44,34 +50,30 @@ class Game{
       cout<<endl;
 
       for (int i = HEIGHT-1; i >=0 ; i--) {
-        cout<<"|"; // left border
+        cout << "|"; // left border
 
         for (size_t j = 0; j < WIDTH; j++) {
-          cout<<" "<<board[i][j]<<" ";
+          cout << " " << board[i][j] << " ";
         }
 
-        cout<<"|"<<endl; // right border
+        cout << "|" << endl; // right border
       }
-      cout<<"  -  -  -  -  -  -  -  "<<endl<<"  0  1  2  3  4  5  6"<<endl;
+      cout << "  -  -  -  -  -  -  -  " << endl << "  0  1  2  3  4  5  6" << endl;
     }
 
+    // this function takes care of reading the column safely and inserting the new piece in the board
+    void nextMove(char** board, char piece){
 
-    bool insertPiece(char** board, char piece, size_t column){
+      size_t column;
+      bool success = false;
 
-      // is it correct? PS: it cannot be negative
-      if(column >= WIDTH){cout<<"Posizione non valida"<<endl; return false;}
-
-      // starting from the bottom row, I look for a free spot in the selected column
-      for (size_t i = 0; i < HEIGHT; i++) {
-
-        if(board[i][column] == ' '){
-          board[i][column] = piece;
-          return true;
-        }
+      do{
+        cout << "(Giocatore " << piece << ") Inserisci colonna: ";
+        column = readColumn();
+        success = insertPiece(board, piece, column);
       }
-      // no free spot available
-      cout<<"Colonna Piena"<<endl;
-       return false;
+      while(!success);// reads a new column until a piece is successfully inserted
+
     }
 
 
@@ -147,7 +149,53 @@ class Game{
       return true;
     }
 
+  private:
+
+    // we have to be careful with how we read the column number
+    size_t readColumn(){
+
+      string line;
+      size_t column;
+
+      while(getline(cin, line)){
+
+        stringstream ss(line);
+        if(ss >> column){ // is the input convertible into a size_t?
+
+          if(ss.eof()){ //is it also the only data passed?
+            // is it correct for our game? PS: it cannot be negative
+            if(column < WIDTH){
+              // we can return it
+              break;
+            }
+            cout << "Colonna non esistente!" << endl << endl;
+          }
+        }
+        cout << "Inserisci una colonna valida: ";
+      }
+
+      return column;
+    }
+
+
+    bool insertPiece(char** board, char piece, size_t column){
+
+      // starting from the bottom row, I look for a free spot in the selected column
+      for (size_t i = 0; i < HEIGHT; i++) {
+
+        if(board[i][column] == ' '){
+          board[i][column] = piece;
+          return true;
+        }
+      }
+      // no free spot available
+      cout << "Colonna Piena" << endl;
+       return false;
+    }
+
+
 };
+
 
 
 // main di prova con 2 giocatori locali
@@ -161,42 +209,36 @@ int main(){
 
   while(true){
     // giocatore 1
-    cout<<"(Giocatore 1) Inserisci colonna: ";
-    cin>>column;
-
-    g.insertPiece(board, 'X', column);
+    g.nextMove(board, 'X');
 
     g.printBoard(board);
 
     if(g.checkWin(board, 'X')){
-      cout<<"Giocatore 1 ha vinto!!!"<<endl;
+      cout << "Giocatore 1 ha vinto!!!" << endl;
       break;
     }
     if(g.isBoardFull(board)){
-      cout<<"Pareggio"<<endl;
+      cout << "Pareggio" << endl;
       break;
     }
 
     // giocatore 2
-    cout<<"(Giocatore 2) Inserisci colonna: ";
-    cin>>column;
-
-    g.insertPiece(board, 'O', column);
+    g.nextMove(board, 'O');
 
     g.printBoard(board);
 
     if(g.checkWin(board, 'O')){
-      cout<<"Giocatore 2 ha vinto!!!"<<endl;
+      cout << "Giocatore 2 ha vinto!!!" << endl;
       break;
     }
     if(g.isBoardFull(board)){
-      cout<<"Pareggio"<<endl;
+      cout << "Pareggio" << endl;
       break;
     }
 
   }
 
-  cout<<"Chiusura gioco..."<<endl;
+  cout << "Chiusura gioco..." << endl;
 
   g.deleteBoard(board);
 
