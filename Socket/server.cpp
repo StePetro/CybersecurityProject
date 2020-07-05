@@ -13,7 +13,7 @@ class ServerConnection{
         struct sockaddr_in address;
         int opt = 1;
         int addrlen = sizeof(address);
-        char buffer[1024] = {0};
+        char buffer[1024] = {0}; // VA ASSOLUTAMENTE CAMBIATO Con un buffer di dimensione opportuna!!!!!!!!!!!
 
     public:
 
@@ -58,13 +58,13 @@ class ServerConnection{
         };
 
         int send_reply(char const *msg){
-            // Invia il messaggio
+            // Invia la risposta
             send(new_socket, msg, strlen(msg), 0);
             return 0;
         };
 
         int read_msg(){
-            // Stampa a schermo la risposta
+            // Stampa a schermo il messaggio
             valread = read(new_socket, buffer, 1024);
             printf("%s\n", buffer);
             return 0;
