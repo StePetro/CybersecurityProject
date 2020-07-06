@@ -5,21 +5,22 @@
 #include <unistd.h>
 #include <string.h>
 
-#define PORT 8080
+#define PORT 8080 // del server
+#define MSG_MAX_LEN 1024
 
 class ClientConnection{
 
         int sock = 0, valread;
         struct sockaddr_in address;
-        char buffer[1024] = {0}; // VA ASSOLUTAMENTE CAMBIATO Con un buffer di dimensione opportuna!!!!!!!!!!!
 
     public:
 
         int initialization(char const *IP_Server){
-            // Formatta l'indirizzo del destinatario, sulla porta 8080
+            // Avvia la connessione con il server alla porta 8080 (del server),
+            // casuale per il client
 
             if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0){
-                printf("\n Socket creation error \n");
+                printf("\nSocket creation error \n");
                 return -1;
             }
 
@@ -42,25 +43,24 @@ class ClientConnection{
 
         int send_msg(char const *msg){
             // Invia il messaggio
-            send(sock, msg, strlen(msg), 0);
+            if(send(sock, msg, strlen(msg), 0) < strlen(msg)){
+                printf("\nSent fewer bytes than expected \n");
+                return -1;
+            }
             return 0;
         };
 
-        int read_reply(){
-            // Stampa a schermo la risposta
-            valread = read(sock, buffer, 1024);
-            printf("%s\n", buffer);
-            return 0;
+        int read_reply(unsigned char* buffer){
+            // Copia il messaggio nel buffer, aggiunge il carattere
+            // di fine stringa e ritorna il numero di
+            // byte letti (carattere di fine stringa escluso)
+            int bytes_read = read(sock, buffer, MSG_MAX_LEN);
+            if(bytes_read < 0){
+                printf("\nError in message reading \n");
+                return -1;
+            }
+            // Manca il carattere di fine stringa
+            buffer[bytes_read] = '\0';
+            return bytes_read;
         };
 };
-
-main(int argc, char const *argv[]){
-    
-    ClientConnection cc;
-    cc.initialization("172.16.1.242");
-    cc.send_msg("Prova1");
-    cc.send_msg("Prova2");
-    cc.read_reply();
-
-    return 0;
-}
