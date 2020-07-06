@@ -1,1 +1,5 @@
-g++ -o prog prog.c -lcrypto
+g++ 4InARow_Server.cpp -o 4InARow_Server -lcrypto -ljsoncpp
+./4InARow_Server
+
+g++ 4InARow_Client.cpp -o 4InARow_Client -lcrypto
+./4InARow_Client
