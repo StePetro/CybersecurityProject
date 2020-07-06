@@ -141,7 +141,6 @@ int main(int argc, char *argv[]) {
                 if (client_socket[i] == 0) {
                     client_socket[i] = new_socket;
                     printf("Adding to list of sockets as %d\n", i);
-
                     break;
                 }
             }
@@ -170,6 +169,7 @@ int main(int argc, char *argv[]) {
 //SECONDA CONNESSIONE IN POI-----------------------------------------------------------------------------------------------
 
                     bool managed = false;
+                    buffer[valread] = '\0'; // ATTENZIONE: Aggiunge il carattere di fine stringa
 
                     // COMANDO /list
                     if (strncmp((const char *)buffer, "/list", valread) == 0) {
@@ -191,10 +191,18 @@ int main(int argc, char *argv[]) {
                         string username = string(buffer);
                         username = username.substr(username.find(":") + 1);
                         string ip = users[username]["ip"].asString();
-                        string message = username + " IP is: " + ip;
-                        if (send(new_socket, message.c_str(), message.length(), 0) != message.length()) {
-                            perror("Error in sending the message");
+                        if(ip.compare("") == 0){
+                            string message = "User not found";
+                            if (send(new_socket, message.c_str(), message.length(), 0) != message.length()) {
+                                perror("Error in sending the message");
+                            }
+                        }else{
+                            string message = username + " IP is: " + ip;
+                            if (send(new_socket, message.c_str(), message.length(), 0) != message.length()) {
+                                perror("Error in sending the message");
+                            }
                         }
+
                         managed = true;
                     }
 

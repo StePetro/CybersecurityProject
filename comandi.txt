@@ -3,3 +3,5 @@ g++ 4InARow_Server.cpp -o 4InARow_Server -lcrypto -ljsoncpp
 
 g++ 4InARow_Client.cpp -o 4InARow_Client -lcrypto
 ./4InARow_Client
+
+g++ verify_certificate.cpp -o verify_certificate -lcrypto
