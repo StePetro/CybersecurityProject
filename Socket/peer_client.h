@@ -13,7 +13,7 @@ class PeerClientConnection {
 
    public:
     int initialization(char const *IP_Server, u_int16_t PORT_Server) {
-        // Avvia la connessione con il server alla porta 8888 (del server),
+        // Avvia la connessione con il server alla porta PORT_Server (del server),
         // casuale per il client
 
         if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {

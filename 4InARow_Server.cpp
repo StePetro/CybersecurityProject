@@ -22,7 +22,7 @@ using namespace std;
 #define MAX_CLIENTS 30
 #define MAX_PENDING_CONNECTIONS 3
 
-// Un semplice server multithread sulla porta 8080 che gestisce fino a
+// Un semplice server multi-connessione sulla porta 8080 che gestisce fino a
 // 30 connessioni simultanee con messaggi di lunghezza fissa
 
 int main(int argc, char *argv[]) {
