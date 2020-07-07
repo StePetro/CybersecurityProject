@@ -10,7 +10,7 @@
 // Il server o il peer in vece di server espongono sempre
 // la porta 8888 per permettere la connessione
 #define PORT 8888
-#define MSG_MAX_LEN 1024
+#define MSG_MAX_LEN 4096
 
 class PeerServerConnection {
     int server_fd, new_socket, valread;

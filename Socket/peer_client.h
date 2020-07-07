@@ -5,7 +5,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define MSG_MAX_LEN 1024
+#define MSG_MAX_LEN 4096
 
 class PeerClientConnection {
     int sock = 0, valread;

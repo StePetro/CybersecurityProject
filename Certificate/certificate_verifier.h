@@ -36,7 +36,7 @@ class CertificateVerifier {
     }
 
    public:
-    int open_ca_certificate(string certificate_file_name) {
+    int open_ca_certificate_file(string certificate_file_name) {
         return open_certificate(certificate_file_name, ca_cert);
     }
 
@@ -115,7 +115,7 @@ class CertificateVerifier {
     int verify_server_certificate(string server_cert_file_name, string ca_cert_file_name, string crl_file_name) {
         // 1 se il certificato è valido, 0 non valido, -1 errore
         // Ricordare di chiamare free_all() al termine
-        if (open_ca_certificate(ca_cert_file_name) != 0) {
+        if (open_ca_certificate_file(ca_cert_file_name) != 0) {
             return -1;
         }
         if (open_crl(crl_file_name) != 0) {

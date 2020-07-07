@@ -10,15 +10,16 @@
 #include <sys/time.h>  //FD_SET, FD_ISSET, FD_ZERO macros
 #include <sys/types.h>
 #include <unistd.h>  //close
-#include <iostream>
+
 #include <fstream>
+#include <iostream>
 
 using namespace std;
 
 #define TRUE 1
 #define FALSE 0
 #define PORT 8080
-#define MSG_MAX_LEN 1024
+#define MSG_MAX_LEN 4096
 #define MAX_CLIENTS 30
 #define MAX_PENDING_CONNECTIONS 3
 
@@ -122,18 +123,18 @@ int main(int argc, char *argv[]) {
                 exit(EXIT_FAILURE);
             }
 
-//PRIMA CONNESSIONE -----------------------------------------------------------------------------------------------
+            //PRIMA CONNESSIONE -----------------------------------------------------------------------------------------------
 
             // Informazioni sulla connessione
             printf("New connection , socket fd is %d , ip is : %s , port : %d \n", new_socket, inet_ntoa(address.sin_addr), ntohs(address.sin_port));
 
             // Messaggio di benvenuto
-            const char *message = "Welcome to Four in a Row!\nTo see the list of users type: \"/list\"";
+            const char *message = "Welcome to Four in a Row!\nTo receive the certificate type: \"/cert\"";
             if (send(new_socket, message, strlen(message), 0) != strlen(message)) {
                 perror("Error in sending the welcome message");
             }
 
-//FINE PRIMA CONNESSIONE -----------------------------------------------------------------------------------------------
+            //FINE PRIMA CONNESSIONE -----------------------------------------------------------------------------------------------
 
             //add new socket to array of sockets
             for (i = 0; i < MAX_CLIENTS; i++) {
@@ -166,10 +167,48 @@ int main(int argc, char *argv[]) {
 
                 //Response from the server
                 else {
-//SECONDA CONNESSIONE IN POI-----------------------------------------------------------------------------------------------
+                    //SECONDA CONNESSIONE IN POI-----------------------------------------------------------------------------------------------
 
                     bool managed = false;
-                    buffer[valread] = '\0'; // ATTENZIONE: Aggiunge il carattere di fine stringa
+                    buffer[valread] = '\0';  // ATTENZIONE: Aggiunge il carattere di fine stringa
+
+                    // COMANDO /cert
+                    if (strncmp((const char *)buffer, "/cert", valread) == 0) {
+                        FILE *cert_file = fopen("PEM/server_certificate.pem", "rb");
+                        if (!cert_file) {
+                            cerr << "Error: cannot open file '"
+                                 << "PEM/server_certificate.pem"
+                                 << "' (no permissions?)\n";
+                            exit(1);
+                        }
+
+                        fseek(cert_file, 0L, SEEK_END);
+                        long cert_file_size = ftell(cert_file);
+                        rewind(cert_file);
+
+                        unsigned char *certificate_buff = (unsigned char *)malloc(cert_file_size + sizeof(long));
+
+                        memcpy(certificate_buff, &cert_file_size, sizeof(long));
+
+                        BIO_dump_fp(stdout, (const char *)certificate_buff, cert_file_size + sizeof(long));
+
+                        if (fread(certificate_buff + sizeof(long), 1, cert_file_size, cert_file) < cert_file_size) {
+                            cerr << "Error while reading file '"
+                                 << "PEM/server_certificate.pem"
+                                 << "'\n";
+                            exit(1);
+                        }
+                        fclose(cert_file);
+
+                        if (send(new_socket, certificate_buff, cert_file_size + sizeof(long), 0) != cert_file_size + sizeof(long)) {
+                            perror("Error in sending the welcome message");
+                        }
+
+                        BIO_dump_fp(stdout, (const char *)certificate_buff, cert_file_size + sizeof(long));
+
+                        free(certificate_buff);
+                        managed = true;
+                    }
 
                     // COMANDO /list
                     if (strncmp((const char *)buffer, "/list", valread) == 0) {
@@ -191,12 +230,12 @@ int main(int argc, char *argv[]) {
                         string username = string(buffer);
                         username = username.substr(username.find(":") + 1);
                         string ip = users[username]["ip"].asString();
-                        if(ip.compare("") == 0){
+                        if (ip.compare("") == 0) {
                             string message = "User not found";
                             if (send(new_socket, message.c_str(), message.length(), 0) != message.length()) {
                                 perror("Error in sending the message");
                             }
-                        }else{
+                        } else {
                             string message = username + " IP is: " + ip;
                             if (send(new_socket, message.c_str(), message.length(), 0) != message.length()) {
                                 perror("Error in sending the message");
@@ -207,14 +246,14 @@ int main(int argc, char *argv[]) {
                     }
 
                     // Comando non valido
-                    if(managed == false){
+                    if (managed == false) {
                         string message = "Command not valid";
                         if (send(new_socket, message.c_str(), message.length(), 0) != message.length()) {
                             perror("Error in sending the message");
                         }
                     }
 
-//FINE SECONDA CONNESSIONE IN POI-----------------------------------------------------------------------------------------------
+                    //FINE SECONDA CONNESSIONE IN POI-----------------------------------------------------------------------------------------------
                 }
             }
         }
