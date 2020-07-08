@@ -47,6 +47,15 @@ class PeerClientConnection {
         return 0;
     };
 
+    int send_msg(unsigned char const *msg, long size) {
+        // Invia il messaggio
+        if (send(sock, msg, size, 0) < size) {
+            printf("\nSent fewer bytes than expected \n");
+            return -1;
+        }
+        return 0;
+    };
+
     int read_msg(unsigned char *buffer) {
         // Copia il messaggio nel buffer, aggiunge il carattere
         // di fine stringa e ritorna il numero di
@@ -60,4 +69,10 @@ class PeerClientConnection {
         buffer[bytes_read] = '\0';
         return bytes_read;
     };
+
+    ~PeerClientConnection() {
+        // Chiude il socket
+        close(sock);
+        cout << "Connection closed" << endl;
+    }
 };
