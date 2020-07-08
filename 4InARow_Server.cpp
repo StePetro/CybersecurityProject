@@ -22,6 +22,7 @@ using namespace std;
 #define MSG_MAX_LEN 4096
 #define MAX_CLIENTS 30
 #define MAX_PENDING_CONNECTIONS 3
+#define CERTIFICATE_PATH "PEM/server_certificate.pem"
 
 // Un semplice server multi-connessione sulla porta 8080 che gestisce fino a
 // 30 connessioni simultanee con messaggi di lunghezza fissa
@@ -34,7 +35,7 @@ int main(int argc, char *argv[]) {
 
     // Strutture dati del server
     int opt = TRUE;
-    int master_socket, addrlen, new_socket, client_socket[MAX_CLIENTS], activity, i, valread, sd;
+    int master_socket, addrlen, new_socket, client_socket[MAX_CLIENTS], activity, i, bytes_read, sd;
     int max_sd;
     struct sockaddr_in address;
 
@@ -154,7 +155,7 @@ int main(int argc, char *argv[]) {
             if (FD_ISSET(sd, &readfds)) {
                 //Check if it was for closing , and also read the
                 //incoming message
-                if ((valread = read(sd, buffer, MSG_MAX_LEN)) == 0) {
+                if ((bytes_read = read(sd, buffer, MSG_MAX_LEN)) == 0) {
                     //Somebody disconnected , get his details and print
                     getpeername(sd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
                     printf("Host disconnected , ip %s , port %d \n",
@@ -169,15 +170,15 @@ int main(int argc, char *argv[]) {
                 else {
                     //SECONDA CONNESSIONE IN POI-----------------------------------------------------------------------------------------------
 
-                    bool managed = false;
-                    buffer[valread] = '\0';  // ATTENZIONE: Aggiunge il carattere di fine stringa
+                    buffer[bytes_read] = '\0';  // ATTENZIONE: Aggiunge il carattere di fine stringa
+                    string tmp;
 
                     // COMANDO /cert
-                    if (strncmp((const char *)buffer, "/cert", valread) == 0) {
-                        FILE *cert_file = fopen("PEM/server_certificate.pem", "rb");
+                    if (strncmp((const char *)buffer, "/cert", bytes_read) == 0) {
+                        FILE *cert_file = fopen(CERTIFICATE_PATH, "rb");
                         if (!cert_file) {
                             cerr << "Error: cannot open file '"
-                                 << "PEM/server_certificate.pem"
+                                 << CERTIFICATE_PATH
                                  << "' (no permissions?)\n";
                             exit(1);
                         }
@@ -186,32 +187,29 @@ int main(int argc, char *argv[]) {
                         long cert_file_size = ftell(cert_file);
                         rewind(cert_file);
 
-                        unsigned char *certificate_buff = (unsigned char *)malloc(cert_file_size + sizeof(long));
+                        unsigned char *certificate_buff = (unsigned char *)malloc(cert_file_size);
 
-                        memcpy(certificate_buff, &cert_file_size, sizeof(long));
-
-                        BIO_dump_fp(stdout, (const char *)certificate_buff, cert_file_size + sizeof(long));
-
-                        if (fread(certificate_buff + sizeof(long), 1, cert_file_size, cert_file) < cert_file_size) {
+                        if (fread(certificate_buff, 1, cert_file_size, cert_file) < cert_file_size) {
                             cerr << "Error while reading file '"
-                                 << "PEM/server_certificate.pem"
+                                 << CERTIFICATE_PATH
                                  << "'\n";
                             exit(1);
                         }
                         fclose(cert_file);
 
-                        if (send(new_socket, certificate_buff, cert_file_size + sizeof(long), 0) != cert_file_size + sizeof(long)) {
+                        if (send(new_socket, certificate_buff, cert_file_size, 0) != cert_file_size) {
                             perror("Error in sending the welcome message");
                         }
 
-                        BIO_dump_fp(stdout, (const char *)certificate_buff, cert_file_size + sizeof(long));
+                        //BIO_dump_fp(stdout, (const char *)certificate_buff, cert_file_size);
 
                         free(certificate_buff);
-                        managed = true;
+
+                        continue;
                     }
 
                     // COMANDO /list
-                    if (strncmp((const char *)buffer, "/list", valread) == 0) {
+                    if (strncmp((const char *)buffer, "/list", bytes_read) == 0) {
                         string message = "Users:\n";
                         for (auto const &user : users.getMemberNames()) {
                             message += "- ";
@@ -222,11 +220,12 @@ int main(int argc, char *argv[]) {
                         if (send(new_socket, message.c_str(), message.length(), 0) != message.length()) {
                             perror("Error in sending the message");
                         }
-                        managed = true;
+                        continue;
                     }
 
                     // COMANDO /challenge
-                    if (12 < valread && strncmp((const char *)buffer, "/challenge:", 11) == 0) {
+                    tmp = "/challenge:";
+                    if (tmp.length() < bytes_read && strncmp((const char *)buffer, tmp.c_str(), tmp.length()) == 0) {
                         string username = string(buffer);
                         username = username.substr(username.find(":") + 1);
                         string ip = users[username]["ip"].asString();
@@ -242,15 +241,46 @@ int main(int argc, char *argv[]) {
                             }
                         }
 
-                        managed = true;
+                        continue;
+                    }
+
+                    // COMANDO /login
+                    tmp = "/login:";
+                    if (tmp.length() < bytes_read && strncmp((const char *)buffer, tmp.c_str(), tmp.length()) == 0) {
+                        string username = string(buffer);
+                        username = username.substr(username.find(":") + 1);
+                        if (users[username].empty()) {
+                            string message = "NF";
+                            if (send(new_socket, message.c_str(), message.length(), 0) != message.length()) {
+                                perror("Error in sending the message");
+                            }
+                        } else {
+                            string message = "ACK";
+                            if (send(new_socket, message.c_str(), message.length(), 0) != message.length()) {
+                                perror("Error in sending the message");
+                            }
+
+                            if ((bytes_read = read(sd, buffer, MSG_MAX_LEN)) == 0) {
+                                //Somebody disconnected , get his details and print
+                                getpeername(sd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
+                                printf("Host disconnected , ip %s , port %d \n",
+                                       inet_ntoa(address.sin_addr), ntohs(address.sin_port));
+
+                                //Close the socket and mark as 0 in list for reuse
+                                close(sd);
+                                client_socket[i] = 0;
+                                continue;
+                            }
+                            BIO_dump_fp(stdout, (const char *)buffer, bytes_read);
+                        }
+
+                        continue;
                     }
 
                     // Comando non valido
-                    if (managed == false) {
-                        string message = "Command not valid";
-                        if (send(new_socket, message.c_str(), message.length(), 0) != message.length()) {
-                            perror("Error in sending the message");
-                        }
+                    string message = "Command not valid";
+                    if (send(new_socket, message.c_str(), message.length(), 0) != message.length()) {
+                        perror("Error in sending the message");
                     }
 
                     //FINE SECONDA CONNESSIONE IN POI-----------------------------------------------------------------------------------------------

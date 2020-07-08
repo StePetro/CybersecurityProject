@@ -223,4 +223,9 @@ class CertificateVerifier {
     void free_CRL() {
         X509_CRL_free(crl);
     }
+
+    ~CertificateVerifier() {
+        // Il distruttore dealloca tutto in automatico
+        free_all();
+    }
 };

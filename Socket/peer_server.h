@@ -81,4 +81,11 @@ class PeerServerConnection {
         buffer[bytes_read] = '\0';
         return bytes_read;
     };
+
+    ~PeerServerConnection() {
+        // Chiude il socket
+        close(server_fd);
+        cout << "Connection closed" << endl;
+    }
+
 };
