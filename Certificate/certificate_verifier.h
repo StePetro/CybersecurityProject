@@ -140,39 +140,12 @@ class CertificateVerifier {
         return X509_NAME_oneline(X509_get_issuer_name(server_cert), NULL, 0);
     }
 
-    int verify_signed_file(string signed_file_name, const char clear_text_buffer[]) {
+    int verify_signed_file(const unsigned char* sgnt_buf, unsigned int sgnt_size, const unsigned char* clear_text_buffer, unsigned clear_size) {
         // it is 0 if invalid signature, -1 if some other error, 1 if success.
         // ATTENZIONE: deve essere prima verificato il certificato
-        // Ricordare di chiamare free_all() al termine
-
-        FILE* sgnt_file = fopen(signed_file_name.c_str(), "rb");
-        if (!sgnt_file) {
-            cerr << "Error: cannot open file '" << signed_file_name << "' (file does not exist?)\n";
-            return -1;
-        }
-
-        // get the file size:
-        // (assuming no failures in fseek() and ftell())
-        fseek(sgnt_file, 0, SEEK_END);
-        long int sgnt_size = ftell(sgnt_file);
-        fseek(sgnt_file, 0, SEEK_SET);
-
-        // read the signature from file:
-        unsigned char* sgnt_buf = (unsigned char*)malloc(sgnt_size);
-        if (!sgnt_buf) {
-            cerr << "Error: malloc returned NULL (file too big?)\n";
-            return -1;
-        }
-        ret = fread(sgnt_buf, 1, sgnt_size, sgnt_file);
-        if (ret < sgnt_size) {
-            cerr << "Error while reading file '" << signed_file_name << "'\n";
-            return -1;
-        }
-        fclose(sgnt_file);
 
         // declare some useful variables:
         const EVP_MD* md = EVP_sha256();
-        int clear_size = strlen(clear_text_buffer);
 
         // create the signature context:
         EVP_MD_CTX* md_ctx = EVP_MD_CTX_new();

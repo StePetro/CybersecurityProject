@@ -3,6 +3,7 @@
 #include <jsoncpp/json/json.h>
 #include <netinet/in.h>
 #include <openssl/bio.h>
+#include <openssl/rand.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>  //strlen
@@ -14,6 +15,8 @@
 #include <fstream>
 #include <iostream>
 
+#include "Signature/signer.h"
+
 using namespace std;
 
 #define TRUE 1
@@ -23,9 +26,11 @@ using namespace std;
 #define MAX_CLIENTS 30
 #define MAX_PENDING_CONNECTIONS 3
 #define CERTIFICATE_PATH "PEM/server_certificate.pem"
+#define PRKEY_PATH "PEM/server_private_key.pem"
+#define NONCE_SIZE 96  //La stessa dell'IV di GCM
 
 // Un semplice server multi-connessione sulla porta 8080 che gestisce fino a
-// 30 connessioni simultanee con messaggi di lunghezza fissa
+// 30 connessioni simultanee con buffer di lunghezza fissa
 
 int main(int argc, char *argv[]) {
     Json::Value users;
@@ -271,7 +276,53 @@ int main(int argc, char *argv[]) {
                                 client_socket[i] = 0;
                                 continue;
                             }
-                            BIO_dump_fp(stdout, (const char *)buffer, bytes_read);
+                            //BIO_dump_fp(stdout, (const char *)buffer, bytes_read);
+
+                            // Seed OpenSSL PRNG
+                            RAND_poll();
+
+                            // Creo casualmente nonces
+                            unsigned char *nonce_sc = (unsigned char *)malloc(NONCE_SIZE * 2);
+                            RAND_bytes((unsigned char *)&nonce_sc[0], NONCE_SIZE);
+
+                            // Giustappongo i nonce (nonces||noncec)
+                            memcpy(nonce_sc + NONCE_SIZE, buffer, NONCE_SIZE);
+
+                            Signer signer;
+                            unsigned char *signed_buff;
+                            unsigned int signed_len;
+                            signer.sign(PRKEY_PATH, (unsigned char *)nonce_sc, NONCE_SIZE * 2, signed_buff, signed_len);
+
+                            // Preparazione messaggio (nonces || sig(nonces||noncec))
+                            memcpy(buffer, nonce_sc, NONCE_SIZE);
+                            memcpy(buffer + NONCE_SIZE, signed_buff, signed_len);
+                            if (send(new_socket, buffer, signed_len + NONCE_SIZE, 0) != signed_len + NONCE_SIZE) {
+                                perror("Error in sending the message");
+                            }
+                            free(signed_buff);
+
+                            if ((bytes_read = read(sd, buffer, MSG_MAX_LEN)) == 0) {
+                                //Somebody disconnected , get his details and print
+                                getpeername(sd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
+                                printf("Host disconnected , ip %s , port %d \n",
+                                       inet_ntoa(address.sin_addr), ntohs(address.sin_port));
+
+                                //Close the socket and mark as 0 in list for reuse
+                                close(sd);
+                                client_socket[i] = 0;
+                                continue;
+                            }
+
+                            if (signer.verify(users[username]["pub_key"].asString(), nonce_sc, NONCE_SIZE, (unsigned char *)buffer, bytes_read) == 0) {
+                                string message = "ACK";
+                            } else {
+                                string message = "NV";
+                            }
+                            if (send(new_socket, message.c_str(), message.length(), 0) != message.length()) {
+                                perror("Error in sending the message");
+                            }
+
+                            free(nonce_sc);  // todo: VA SALVATO DA QUALCHE PARTE PER INCREMENTARLO POI!!!!!!!!!!!!!!
                         }
 
                         continue;

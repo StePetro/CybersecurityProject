@@ -47,7 +47,7 @@ class PeerClientConnection {
         return 0;
     };
 
-    int send_msg(unsigned char const *msg, long size) {
+    int send_msg(unsigned char const *msg, unsigned int size) {
         // Invia il messaggio
         if (send(sock, msg, size, 0) < size) {
             printf("\nSent fewer bytes than expected \n");

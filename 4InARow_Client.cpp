@@ -14,7 +14,7 @@
 
 using namespace std;
 
-int cert_handler(unsigned char *msg_buffer, PeerClientConnection &cc) {
+int cert_handler(unsigned char *msg_buffer, PeerClientConnection &cc, CertificateVerifier &cv) {
     // Gestisce la verifica del certificato se richiesta
 
     long bytes_read = 0;
@@ -43,7 +43,6 @@ int cert_handler(unsigned char *msg_buffer, PeerClientConnection &cc) {
 
     fclose(cert_file);
 
-    CertificateVerifier cv;
     if (cv.verify_server_certificate(cert_file_name, "PEM/ca_certificate.pem", "PEM/crl.pem") == 1) {
         cout << "The certificate is valid" << endl;
         cout << "Server: " << cv.get_server_name() << endl;
@@ -56,9 +55,8 @@ int cert_handler(unsigned char *msg_buffer, PeerClientConnection &cc) {
     return 0;
 }
 
-int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc) {
+int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, CertificateVerifier &cv, unsigned char *&nonce_cs) {
     long bytes_read = 0;
-    unsigned char *nonce = (unsigned char *)malloc(NONCE_SIZE);
 
     // Lettura risposta server
     if ((bytes_read = cc.read_msg(msg_buffer)) == 0) {
@@ -80,11 +78,52 @@ int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc) {
         // Seed OpenSSL PRNG
         RAND_poll();
         // Generate nonce at random
-        RAND_bytes((unsigned char *)&nonce[0], NONCE_SIZE);
+        nonce_cs = (unsigned char *)malloc(NONCE_SIZE*2);
+        RAND_bytes((unsigned char *)&nonce_cs[0], NONCE_SIZE);
 
-        cc.send_msg(nonce, NONCE_SIZE);
+        // Mando solo noncec
+        cc.send_msg(nonce_cs, NONCE_SIZE);
 
-        BIO_dump_fp(stdout, (const char *)nonce, NONCE_SIZE);
+        //BIO_dump_fp(stdout, (const char *)nonce, NONCE_SIZE);
+
+        // Lettura risposta server
+        // messaggio = (nonces || sig(nonces||noncec))
+        if ((bytes_read = cc.read_msg(msg_buffer)) == 0) {
+            cout << "Server disconnected" << endl;
+            return -1;
+        }
+
+        // Giustappongo i due nonce: (noncec||nonces)
+        memcpy(nonce_cs + NONCE_SIZE, msg_buffer, NONCE_SIZE);
+
+        // Verifico sig(nonces||noncec)
+        if (cv.verify_signed_file(msg_buffer + NONCE_SIZE, bytes_read - NONCE_SIZE, nonce_cs, NONCE_SIZE*2) == 1) {
+            cout << "Correct server signature" << endl;
+        } else {
+            return -1;
+        }
+        
+        Signer s;
+        unsigned char *signed_msg;
+        unsigned int signed_msg_size;
+        string private_key_path;
+        cout << "Pleas insert your private key path: ";
+        cin >> private_key_path;
+
+        // sig(nonces)
+        s.sign(private_key_path, nonce_cs + NONCE_SIZE, NONCE_SIZE, signed_msg, signed_msg_size);
+
+        // invio sig(nonces)
+        cc.send_msg(signed_msg, signed_msg_size);
+
+        // Lettura risposta server
+        if ((bytes_read = cc.read_msg(msg_buffer)) == 0) {
+            cout << "Server disconnected" << endl;
+            return -1;
+        }
+        printf("%s\n", msg_buffer);
+
+        free(signed_msg);
         return 0;
     }
     return -1;
@@ -93,6 +132,8 @@ int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc) {
 main(int argc, char const *argv[]) {
     unsigned char msg_buffer[MSG_MAX_LEN] = {0};
     long bytes_read = 0;
+    CertificateVerifier cv;
+    unsigned char *nonce;
 
     PeerClientConnection cc;
     cc.initialization(IP, SERVER_PORT);
@@ -113,7 +154,7 @@ main(int argc, char const *argv[]) {
 
         // Gestione richiesta certificato
         if (msg.compare("/cert") == 0) {
-            if (!cert_handler(msg_buffer, cc) == 0) {
+            if (!cert_handler(msg_buffer, cc, cv) == 0) {
                 cout << "Certificate NOT verified" << endl;
             }
             continue;
@@ -121,7 +162,7 @@ main(int argc, char const *argv[]) {
 
         // Gestione richiesta certificato
         if (msg.compare(0, string("/login").size(), "/login") == 0) {
-            if (!login_handler(msg_buffer, cc) == 0) {
+            if (!login_handler(msg_buffer, cc, cv, nonce) == 0) {
                 cout << "Login failed" << endl;
             }
             continue;
