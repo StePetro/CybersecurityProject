@@ -11,10 +11,11 @@
 #define SERVER_PORT 8080
 #define IP "172.16.1.213"
 #define NONCE_SIZE 96  //La stessa dell'IV di GCM
+#define CERT_SAVE_PATH "PEM/ServerToClientCert.pem"
 
 using namespace std;
 
-int cert_handler(unsigned char *msg_buffer, PeerClientConnection &cc, CertificateVerifier &cv) {
+int cert_handler(unsigned char *msg_buffer, PeerClientConnection &cc) {
     // Gestisce la verifica del certificato se richiesta
 
     long bytes_read = 0;
@@ -29,7 +30,7 @@ int cert_handler(unsigned char *msg_buffer, PeerClientConnection &cc, Certificat
 
     //cout << cert_size << endl;
 
-    string cert_file_name = "PEM/ServerToClientCert.pem";
+    string cert_file_name = CERT_SAVE_PATH ;
     FILE *cert_file = fopen(cert_file_name.c_str(), "wb");
     if (!cert_file) {
         cerr << "Error: cannot open file '" << cert_file_name << "' (no permissions?)\n";
@@ -43,6 +44,8 @@ int cert_handler(unsigned char *msg_buffer, PeerClientConnection &cc, Certificat
 
     fclose(cert_file);
 
+    CertificateVerifier cv;
+
     if (cv.verify_server_certificate(cert_file_name, "PEM/ca_certificate.pem", "PEM/crl.pem") == 1) {
         cout << "The certificate is valid" << endl;
         cout << "Server: " << cv.get_server_name() << endl;
@@ -55,7 +58,7 @@ int cert_handler(unsigned char *msg_buffer, PeerClientConnection &cc, Certificat
     return 0;
 }
 
-int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, CertificateVerifier &cv, unsigned char *&nonce_cs) {
+int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned char *&nonce_cs) {
     long bytes_read = 0;
 
     // Lettura risposta server
@@ -96,8 +99,11 @@ int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, Certifica
         // Giustappongo i due nonce: (noncec||nonces)
         memcpy(nonce_cs + NONCE_SIZE, msg_buffer, NONCE_SIZE);
 
+        // Verificatore certificato
+        CertificateVerifier cv;
+
         // Verifico sig(nonces||noncec)
-        if (cv.verify_signed_file(msg_buffer + NONCE_SIZE, bytes_read - NONCE_SIZE, nonce_cs, NONCE_SIZE*2) == 1) {
+        if (cv.verify_signed_file(msg_buffer + NONCE_SIZE, bytes_read - NONCE_SIZE, nonce_cs, NONCE_SIZE*2, CERT_SAVE_PATH) == 1) {
             cout << "Correct server signature" << endl;
         } else {
             return -1;
@@ -132,7 +138,6 @@ int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, Certifica
 main(int argc, char const *argv[]) {
     unsigned char msg_buffer[MSG_MAX_LEN] = {0};
     long bytes_read = 0;
-    CertificateVerifier cv;
     unsigned char *nonce;
 
     PeerClientConnection cc;

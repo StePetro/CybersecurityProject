@@ -140,9 +140,16 @@ class CertificateVerifier {
         return X509_NAME_oneline(X509_get_issuer_name(server_cert), NULL, 0);
     }
 
-    int verify_signed_file(const unsigned char* sgnt_buf, unsigned int sgnt_size, const unsigned char* clear_text_buffer, unsigned clear_size) {
-        // it is 0 if invalid signature, -1 if some other error, 1 if success.
-        // ATTENZIONE: deve essere prima verificato il certificato
+    int verify_signed_file(const unsigned char* sgnt_buf, unsigned int sgnt_size, const unsigned char* clear_text_buffer, unsigned clear_size, string server_cert_file_name) {
+        // It is 0 if invalid signature, -1 if some other error, 1 if success.
+        // Inserire NULL al path del certificato se già caricato in precedenza
+
+        // Apre il certificato se non presente
+        if (server_cert == NULL) {
+            if (!open_server_certificate(server_cert_file_name) == 0) {
+                return -1;
+            }
+        }
 
         // declare some useful variables:
         const EVP_MD* md = EVP_sha256();
