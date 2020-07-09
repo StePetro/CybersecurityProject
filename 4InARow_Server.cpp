@@ -29,11 +29,164 @@ using namespace std;
 #define PRKEY_PATH "PEM/server_private_key.pem"
 #define NONCE_SIZE 4  //La stessa di un unsigned int
 
+int cert_handler(int socket) {
+    // Apre il file del certificato
+    FILE *cert_file = fopen(CERTIFICATE_PATH, "rb");
+    if (!cert_file) {
+        cerr << "Error: cannot open file '"
+             << CERTIFICATE_PATH
+             << "' (no permissions?)\n";
+        return -1;
+    }
+
+    // Legge la lunghezza del certificato
+    fseek(cert_file, 0L, SEEK_END);
+    long cert_file_size = ftell(cert_file);
+    rewind(cert_file);
+
+    // Alloca una buffer per salvare il certificato in memoria
+    unsigned char *certificate_buff = (unsigned char *)malloc(cert_file_size);
+
+    // Scrive il certificato nel buffer
+    if (fread(certificate_buff, 1, cert_file_size, cert_file) < cert_file_size) {
+        cerr << "Error while reading file '"
+             << CERTIFICATE_PATH
+             << "'\n";
+        return -1;
+    }
+    fclose(cert_file);
+
+    // Spedisce il certificato in risposta all'utente
+    if (send(socket, certificate_buff, cert_file_size, 0) != cert_file_size) {
+        perror("Error in sending the welcome message");
+        return -1;
+    }
+
+    // Dealloca la memoria del buffer
+    free(certificate_buff);
+    return 0;
+}
+
+int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, char *buffer, sockaddr_in address, int addrlen, int *client_socket, int i) {
+    int bytes_read;
+    string username = string(buffer);
+    // Nome utente
+    username = username.substr(username.find(":") + 1);
+    if (users[username].empty()) {
+        // Se non è nel json risponde Not Found
+        string message = "NF";
+        if (send(socket, message.c_str(), message.length(), 0) != message.length()) {
+            perror("Error in sending the message");
+        }
+        return -1;
+    }
+
+    // Altrimenti manda un ACK se presente
+    string message = "ACK";
+    if (send(socket, message.c_str(), message.length(), 0) != message.length()) {
+        perror("Error in sending the message");
+        return -1;
+    }
+
+    // Legge (nonce) dal client
+    if ((bytes_read = read(socket, buffer, MSG_MAX_LEN)) == 0) {
+        // Disconnessione, print delle informazioni
+        getpeername(socket, (struct sockaddr *)&address, (socklen_t *)&addrlen);
+        printf("Host disconnected , ip %s , port %d \n",
+               inet_ntoa(address.sin_addr), ntohs(address.sin_port));
+
+        // Chiusura socket, marcato con 0 per essere riutilizzato
+        close(socket);
+        client_socket[i] = 0;
+        socket_slots[i] = {};
+        return -1;
+    }
+
+    // Creo casualmente nonces del server
+    RAND_poll();
+    unsigned char *nonce_sc = (unsigned char *)malloc(NONCE_SIZE * 2);  // Alloco per due nonce in modo da giustapporli
+    RAND_bytes((unsigned char *)&nonce_sc[0], NONCE_SIZE);
+
+    // Giustappongo i nonce (nonces||noncec)
+    memcpy(nonce_sc + NONCE_SIZE, buffer, NONCE_SIZE);
+
+    // Firma digitale dei nonce giustapposti con la chiave privata del server
+    unsigned char *signed_buff;
+    unsigned int signed_len;
+    if (sign(PRKEY_PATH, (unsigned char *)nonce_sc, NONCE_SIZE * 2, signed_buff, signed_len) != 0) {
+        perror("Not able to sign");
+        return -1;
+    }
+
+    // Preparazione messaggio (nonces || sig(nonces||noncec))
+    memcpy(buffer, nonce_sc, NONCE_SIZE);
+    memcpy(buffer + NONCE_SIZE, signed_buff, signed_len);
+
+    // Invio (nonces || sig(nonces||noncec))
+    if (send(socket, buffer, signed_len + NONCE_SIZE, 0) != signed_len + NONCE_SIZE) {
+        perror("Error in sending the message");
+        return -1;
+    }
+
+    free(signed_buff);
+
+    // Il client risponde con la firma del nonce del server: sig(nonces)
+    if ((bytes_read = read(socket, buffer, MSG_MAX_LEN)) == 0) {
+        // Disconnessione, print delle informazioni
+        getpeername(socket, (struct sockaddr *)&address, (socklen_t *)&addrlen);
+        printf("Host disconnected , ip %s , port %d \n",
+               inet_ntoa(address.sin_addr), ntohs(address.sin_port));
+
+        // Chiusura socket, marcato con 0 per essere riutilizzato
+        close(socket);
+        client_socket[i] = 0;
+        socket_slots[i] = {};
+        return -1;
+    }
+
+    // Verifica se la firma sig(nonces) è valida, tramite la chiave pubblica dell'utente che si sta loggando
+    if (verify_sign(users[username]["pub_key"].asString(), nonce_sc, NONCE_SIZE, (unsigned char *)buffer, bytes_read) == 0) {
+        string message = "ACK";  // Se era giusta
+    } else {
+        string message = "NV";  // Se non era valida
+    }
+
+    if (send(socket, message.c_str(), message.length(), 0) != message.length()) {
+        perror("Error in sending the message");
+        return -1;
+    }
+
+    if (message.compare("NV") == 0) {
+        return -1;  // Se non è valida non continuo
+    }
+
+    // Prende le informazioni sull'utente e le salva nella struttura json in memoria (non nel file)
+    getpeername(socket, (struct sockaddr *)&address, (socklen_t *)&addrlen);
+    users[username]["IP"] = inet_ntoa(address.sin_addr);
+    users[username]["PORT"] = ntohs(address.sin_port);
+
+    // Salva il nonce trasformandolo in unsigned int per poterlo manipoare facilmente
+    unsigned int *nonce_s_pointer = (unsigned int *)malloc(NONCE_SIZE + 1);
+    memcpy(nonce_s_pointer, nonce_sc, NONCE_SIZE);
+    unsigned int nonce_s = *nonce_s_pointer;
+    users[username]["nonce"] = nonce_s;
+    free(nonce_s_pointer);
+    free(nonce_sc);
+
+    // Aggiungo anche l'informazione su quale user sta usando un certo slot dei socket
+    socket_slots[i] = username;
+
+    cout << users << endl;
+    cout << socket_slots << endl;
+    return 0;
+}
+
 // Un semplice server multi-connessione sulla porta 8080 che gestisce fino a
 // 30 connessioni simultanee con buffer di lunghezza fissa
 
 int main(int argc, char *argv[]) {
     Json::Value users;
+    Json::Value socket_slots;
 
     ifstream users_file("users.json", ifstream::binary);
     users_file >> users;
@@ -169,6 +322,8 @@ int main(int argc, char *argv[]) {
                     //Close the socket and mark as 0 in list for reuse
                     close(sd);
                     client_socket[i] = 0;
+                    //Toglie l'utente disconnesso dalla lista
+                    socket_slots[i] = {};
                 }
 
                 //Response from the server
@@ -176,194 +331,71 @@ int main(int argc, char *argv[]) {
                     //SECONDA CONNESSIONE IN POI-----------------------------------------------------------------------------------------------
 
                     buffer[bytes_read] = '\0';  // ATTENZIONE: Aggiunge il carattere di fine stringa
+
                     string tmp;
 
                     // COMANDO /cert
                     if (strncmp((const char *)buffer, "/cert", bytes_read) == 0) {
-                        FILE *cert_file = fopen(CERTIFICATE_PATH, "rb");
-                        if (!cert_file) {
-                            cerr << "Error: cannot open file '"
-                                 << CERTIFICATE_PATH
-                                 << "' (no permissions?)\n";
-                            exit(1);
+                        if (cert_handler(sd) == 0) {
+                            continue;
                         }
-
-                        fseek(cert_file, 0L, SEEK_END);
-                        long cert_file_size = ftell(cert_file);
-                        rewind(cert_file);
-
-                        unsigned char *certificate_buff = (unsigned char *)malloc(cert_file_size);
-
-                        if (fread(certificate_buff, 1, cert_file_size, cert_file) < cert_file_size) {
-                            cerr << "Error while reading file '"
-                                 << CERTIFICATE_PATH
-                                 << "'\n";
-                            exit(1);
-                        }
-                        fclose(cert_file);
-
-                        if (send(new_socket, certificate_buff, cert_file_size, 0) != cert_file_size) {
-                            perror("Error in sending the welcome message");
-                        }
-
-                        //BIO_dump_fp(stdout, (const char *)certificate_buff, cert_file_size);
-
-                        free(certificate_buff);
-
-                        continue;
-                    }
-
-                    // COMANDO /list
-                    if (strncmp((const char *)buffer, "/list", bytes_read) == 0) {
-                        string message = "Users:\n";
-                        for (auto const &user : users.getMemberNames()) {
-                            message += "- ";
-                            message += user;
-                            message += "\n";
-                        }
-                        message += "\nIf you want to challenge someone type: \"/challenge:[user]\"";
-                        if (send(new_socket, message.c_str(), message.length(), 0) != message.length()) {
-                            perror("Error in sending the message");
-                        }
-                        continue;
-                    }
-
-                    // COMANDO /challenge
-                    tmp = "/challenge:";
-                    if (tmp.length() < bytes_read && strncmp((const char *)buffer, tmp.c_str(), tmp.length()) == 0) {
-                        string username = string(buffer);
-                        username = username.substr(username.find(":") + 1);
-                        string ip = users[username]["ip"].asString();
-                        if (ip.compare("") == 0) {
-                            string message = "User not found";
-                            if (send(new_socket, message.c_str(), message.length(), 0) != message.length()) {
-                                perror("Error in sending the message");
-                            }
-                        } else {
-                            string message = username + " IP is: " + ip;
-                            if (send(new_socket, message.c_str(), message.length(), 0) != message.length()) {
-                                perror("Error in sending the message");
-                            }
-                        }
-
-                        continue;
                     }
 
                     // COMANDO /login
                     tmp = "/login:";
                     if (tmp.length() < bytes_read && strncmp((const char *)buffer, tmp.c_str(), tmp.length()) == 0) {
-                        string username = string(buffer);
-                        username = username.substr(username.find(":") + 1);
-                        if (users[username].empty()) {
-                            string message = "NF";
-                            if (send(new_socket, message.c_str(), message.length(), 0) != message.length()) {
-                                perror("Error in sending the message");
-                            }
-                        } else {
-                            string message = "ACK";
-                            if (send(new_socket, message.c_str(), message.length(), 0) != message.length()) {
-                                perror("Error in sending the message");
-                            }
-
-                            // Legge (noncec)
-                            if ((bytes_read = read(sd, buffer, MSG_MAX_LEN)) == 0) {
-                                //Somebody disconnected , get his details and print
-                                getpeername(sd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
-                                printf("Host disconnected , ip %s , port %d \n",
-                                       inet_ntoa(address.sin_addr), ntohs(address.sin_port));
-
-                                //Close the socket and mark as 0 in list for reuse
-                                close(sd);
-                                client_socket[i] = 0;
-                                continue;
-                            }
-
-                            //cout << "(noncec)" << endl;
-                            //BIO_dump_fp(stdout, (const char *)buffer, bytes_read);
-
-                            // Seed OpenSSL PRNG
-                            RAND_poll();
-
-                            // Creo casualmente nonces
-                            unsigned char *nonce_sc = (unsigned char *)malloc(NONCE_SIZE * 2);
-                            RAND_bytes((unsigned char *)&nonce_sc[0], NONCE_SIZE);
-
-                            // Giustappongo i nonce (nonces||noncec)
-                            memcpy(nonce_sc + NONCE_SIZE, buffer, NONCE_SIZE);
-
-                            //cout << "(nonces||noncec)" << endl;
-                            //BIO_dump_fp(stdout, (const char *)nonce_sc, NONCE_SIZE*2);
-
-                            unsigned char *signed_buff;
-                            unsigned int signed_len;
-                            if (sign(PRKEY_PATH, (unsigned char *)nonce_sc, NONCE_SIZE * 2, signed_buff, signed_len) != 0) {
-                                perror("Not able to sign");
-                                continue;
-                            }
-
-                            //cout << "sig(nonces||noncec)" << endl;
-                            //BIO_dump_fp(stdout, (const char *)signed_buff, signed_len);
-
-                            // Preparazione messaggio (nonces || sig(nonces||noncec))
-                            memcpy(buffer, nonce_sc, NONCE_SIZE);
-                            memcpy(buffer + NONCE_SIZE, signed_buff, signed_len);
-
-                            //cout << "(nonces || sig(nonces||noncec))" << endl;
-                            //BIO_dump_fp(stdout, (const char *)buffer, signed_len + NONCE_SIZE);
-
-                            if (send(new_socket, buffer, signed_len + NONCE_SIZE, 0) != signed_len + NONCE_SIZE) {
-                                perror("Error in sending the message");
-                            }
-
-                            free(signed_buff);
-
-                            // sig(nonces)
-                            if ((bytes_read = read(sd, buffer, MSG_MAX_LEN)) == 0) {
-                                //Somebody disconnected , get his details and print
-                                getpeername(sd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
-                                printf("Host disconnected , ip %s , port %d \n",
-                                       inet_ntoa(address.sin_addr), ntohs(address.sin_port));
-
-                                //Close the socket and mark as 0 in list for reuse
-                                close(sd);
-                                client_socket[i] = 0;
-                                continue;
-                            }
-
-                            // Verify sig(nonces)
-                            if (verify_sign(users[username]["pub_key"].asString(), nonce_sc, NONCE_SIZE, (unsigned char *)buffer, bytes_read) == 0) {
-                                string message = "ACK";
-                            } else {
-                                string message = "NV";
-                            }
-
-                            if (send(new_socket, message.c_str(), message.length(), 0) != message.length()) {
-                                perror("Error in sending the message");
-                            }
-
-                            // Prende le informazioni sull'utente e le salva nella struttura json (non nel file)
-                            getpeername(sd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
-                            users[username]["IP"] = inet_ntoa(address.sin_addr);
-                            users[username]["PORT"] = ntohs(address.sin_port);
-                            users[username]["online"] = true;
-
-                            unsigned int* nonce_s_pointer = (unsigned int *)malloc(NONCE_SIZE + 1);
-                            memcpy(nonce_s_pointer, nonce_sc, NONCE_SIZE);
-
-                            unsigned int nonce_s = *nonce_s_pointer;
-
-                            users[username]["nonce"] = nonce_s;
-
-                            cout << users << endl;
-
+                        if (login_handler(sd, users, socket_slots, buffer, address, addrlen, client_socket, i) == 0) {
+                            continue;
                         }
-                        unsigned char *nonce_sc = (unsigned char *)malloc(NONCE_SIZE * 2);
-                        continue;
                     }
 
-                    // Comando non valido
-                    string message = "Command not valid";
-                    if (send(new_socket, message.c_str(), message.length(), 0) != message.length()) {
+                    // Comandi disponibili solo agli utenti loggati
+                    if (!socket_slots[i].empty()) {
+                        // COMANDO /list
+                        if (strncmp((const char *)buffer, "/list", bytes_read) == 0) {
+                            // Elenca solo gli utenti online e loggati
+                            string message = "Online users:";
+                            for (i = 0; i < MAX_CLIENTS; i++) {
+                                if (!socket_slots[i].empty())
+                                    message += "\n- ";
+                                message += socket_slots[i].asString();
+                            }
+                            message += "\nIf you want to challenge someone type: \"/challenge:[user]\"";
+                            if (send(sd, message.c_str(), message.length(), 0) != message.length()) {
+                                perror("Error in sending the message");
+                            }
+                            continue;
+                        }
+
+                        /*
+
+                        // COMANDO /challenge
+                        tmp = "/challenge:";
+                        if (tmp.length() < bytes_read && strncmp((const char *)buffer, tmp.c_str(), tmp.length()) == 0) {
+                            string username = string(buffer);
+                            username = username.substr(username.find(":") + 1);
+                            string ip = users[username]["ip"].asString();
+                            if (ip.compare("") == 0) {
+                                string message = "User not found";
+                                if (send(sd, message.c_str(), message.length(), 0) != message.length()) {
+                                    perror("Error in sending the message");
+                                    continue;
+                                }
+                            } else {
+                                string message = username + " IP is: " + ip;
+                                if (send(sd, message.c_str(), message.length(), 0) != message.length()) {
+                                    perror("Error in sending the message");
+                                    continue;
+                                }
+                            }
+
+                            continue;
+                        }*/
+                    }
+
+                    // Comando non valido o errore nei comandi precedenti
+                    string message = "ERR";
+                    if (send(sd, message.c_str(), message.length(), 0) != message.length()) {
                         perror("Error in sending the message");
                     }
 

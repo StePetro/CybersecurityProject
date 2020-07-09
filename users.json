@@ -5,9 +5,11 @@
     },
 
     "Bob" : {
+        "pub_key": "PEM/bob_public_key.pem"
     },
 
     "Oscar" : {
+        "pub_key": "PEM/oscar_public_key.pem"
     }
 
 }

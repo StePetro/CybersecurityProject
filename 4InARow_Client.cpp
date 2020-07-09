@@ -28,10 +28,7 @@ int cert_handler(unsigned char *msg_buffer, PeerClientConnection &cc) {
         exit(1);
     }
 
-    //BIO_dump_fp(stdout, (const char *)msg_buffer, MSG_MAX_LEN);
-
-    //cout << cert_size << endl;
-
+    // Apre il file dove salvare il certificato
     string cert_file_name = CERT_SAVE_PATH;
     FILE *cert_file = fopen(cert_file_name.c_str(), "wb");
     if (!cert_file) {
@@ -39,15 +36,17 @@ int cert_handler(unsigned char *msg_buffer, PeerClientConnection &cc) {
         return -1;
     }
 
+    // Salva il certificato nel file
     if (fwrite(msg_buffer, 1, bytes_read, cert_file) < bytes_read) {
         cerr << "Error while writing the file '" << cert_file_name << "'\n";
         return -1;
     }
-
     fclose(cert_file);
 
+    // Permette di verificare il certificato
     CertificateVerifier cv;
 
+    // Verifica il certificato
     if (cv.verify_server_certificate(cert_file_name, CA_CERT, CRL) == 1) {
         cout << "The certificate is valid" << endl;
         cout << "Server: " << cv.get_server_name() << endl;
@@ -60,37 +59,37 @@ int cert_handler(unsigned char *msg_buffer, PeerClientConnection &cc) {
     return 0;
 }
 
-int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned char *&nonce_s) {
+int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned int&nonce) {
     long bytes_read = 0;
 
-    // Lettura risposta server
+    // Lettura risposta server alla /login:[nome_utente]
     if ((bytes_read = cc.read_msg(msg_buffer)) == 0) {
         cout << "Server disconnected" << endl;
         exit(1);
     }
 
-    //printf("%s\n", msg_buffer);
-
+    // Utente non trovato
     string tmp = "NF";
     if (strncmp((const char *)msg_buffer, tmp.c_str(), tmp.length()) == 0) {
         cout << "User not found" << endl;
         return -1;
     }
 
+    // Utente valido
     tmp = "ACK";
     if (strncmp((const char *)msg_buffer, tmp.c_str(), tmp.length()) == 0) {
+
         cout << "Authenticating..." << endl;
-        // Seed OpenSSL PRNG
+
+        // Generazione nonce client casuale
         RAND_poll();
-        // Generate nonce at random
-        unsigned char *nonce_sc = (unsigned char *)malloc(NONCE_SIZE * 2);
+        unsigned char *nonce_sc = (unsigned char *)malloc(NONCE_SIZE * 2); // Preparo lo spazio per 2 nonce giustapposti
         RAND_bytes((unsigned char *)&nonce_sc[NONCE_SIZE], NONCE_SIZE);
 
-        // Mando solo noncec
-        cc.send_msg(nonce_sc + NONCE_SIZE, NONCE_SIZE);
-
-        //cout << "noncec" << endl;
-        //BIO_dump_fp(stdout, (const char *)nonce_sc + NONCE_SIZE, NONCE_SIZE);
+        // Mando solo nonce_client
+        if(cc.send_msg(nonce_sc + NONCE_SIZE, NONCE_SIZE) !=0){
+            return -1;
+        }
 
         // Lettura risposta server
         // messaggio = (nonces || sig(nonces||noncec))
@@ -99,61 +98,59 @@ int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned 
             return -1;
         }
 
-        //cout << "(nonces || sig(nonces||noncec)" << endl;
-        //BIO_dump_fp(stdout, (const char *)msg_buffer, bytes_read);
-
         // Giustappongo i due nonce: (nonces||noncec)
         memcpy(nonce_sc, msg_buffer, NONCE_SIZE);
 
-        //cout << "(nonces||noncec)" << endl;
-       // BIO_dump_fp(stdout, (const char *)nonce_sc, NONCE_SIZE * 2);
-
-        //cout << "sig(nonces||noncec)" << endl;
-        //BIO_dump_fp(stdout, (const char *)msg_buffer + NONCE_SIZE, bytes_read - NONCE_SIZE);
-
+        // Verifico sig(nonces||noncec) con il certificato del server
         CertificateVerifier cv;
-
-        // Verifico sig(nonces||noncec)
         if (cv.verify_signed_file(msg_buffer + NONCE_SIZE, bytes_read - NONCE_SIZE, nonce_sc, NONCE_SIZE * 2, CERT_SAVE_PATH) == 1) {
             cout << "Correct server signature" << endl;
         } else {
             return -1;
         }
 
+        // Preparazione firma nonce_server
         unsigned char *signed_msg;
         unsigned int signed_msg_size;
         string private_key_path;
         cout << "Please insert your private key path: ";
         cin >> private_key_path;
 
-        // sig(nonces)
-        if(sign(private_key_path, nonce_sc, NONCE_SIZE, signed_msg, signed_msg_size) != 0){
+        // Firma: sig(nonces)
+        if (sign(private_key_path, nonce_sc, NONCE_SIZE, signed_msg, signed_msg_size) != 0) {
             return -1;
         }
 
-        // invio sig(nonces)
-        cc.send_msg(signed_msg, signed_msg_size);
+        // Invio sig(nonces)
+        if(cc.send_msg(signed_msg, signed_msg_size) != 0){
+            return -1;
+        }
 
-        // Lettura risposta server
+        // Lettura risposta server alla firma del nonce
         if ((bytes_read = cc.read_msg(msg_buffer)) == 0) {
             cout << "Server disconnected" << endl;
             return -1;
         }
 
+        // Firma del client non valida
         string tmp = "NV";
         if (strncmp((const char *)msg_buffer, tmp.c_str(), tmp.length()) == 0) {
             cout << "Your signatur is not valid" << endl;
             return -1;
         }
 
+        // Firma del client valida
         tmp = "ACK";
         if (strncmp((const char *)msg_buffer, tmp.c_str(), tmp.length()) == 0) {
-            free(signed_msg);
-            cout << "Login completed" << endl;
             // Salvo il nonce e svuoto la memoria
-            nonce_s = (unsigned char *)malloc(NONCE_SIZE);
-            memcpy(nonce_s, nonce_sc, NONCE_SIZE);
+            free(signed_msg);
+            cout << "Login completed successfully" << endl;
+            unsigned int* nonce_pointer = (unsigned int *)malloc(NONCE_SIZE);
+            memcpy(nonce_pointer, nonce_sc, NONCE_SIZE);
+            nonce = *nonce_pointer;
+            cout << "The nonce is: " << nonce << endl;
             free(nonce_sc);
+            free(nonce_pointer);
             return 0;
         }
     }
@@ -161,10 +158,12 @@ int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned 
 }
 
 main(int argc, char const *argv[]) {
+    // Strutture dati utili
     unsigned char msg_buffer[MSG_MAX_LEN] = {0};
     long bytes_read = 0;
-    unsigned char *nonce;
+    unsigned int nonce;
 
+    // Socket client
     PeerClientConnection cc;
     cc.initialization(IP_SERVER, SERVER_PORT);
 
@@ -180,35 +179,35 @@ main(int argc, char const *argv[]) {
         string msg;
         cout << "\nPlease type a command: ";
         cin >> msg;
+        if (msg.compare("/exit") == 0 || msg.compare("/quit") == 0) {
+            // Chiudo la connessione ed esco
+            cout << "Thanks for playing, goodbye!" << endl;
+            break;
+        }
         cc.send_msg(msg.c_str());
 
         // Gestione richiesta certificato
-        if (msg.compare("/cert") == 0) {
-            if (!cert_handler(msg_buffer, cc) == 0) {
-                cout << "Certificate NOT verified" << endl;
-            }
-            continue;
-        }
-
-        // Gestione richiesta certificato
-        if (msg.compare(0, string("/login").size(), "/login") == 0) {
-            if (!login_handler(msg_buffer, cc, nonce) == 0) {
+        if (msg.compare(0, string("/login:").size(), "/login:") == 0) {
+            if (login_handler(msg_buffer, cc, nonce) != 0) {
                 cout << "Login failed" << endl;
             }
             continue;
         }
 
         // Gestione richiesta certificato
-        if (msg.compare("/exit") == 0 || msg.compare("/quit") == 0) {
-            cout << "Thanks for playing, goodbye!" << endl;
-            break;
+        if (msg.compare("/cert") == 0) {
+            if (cert_handler(msg_buffer, cc) != 0) {
+                cout << "Certificate NOT verified" << endl;
+            }
+            continue;
         }
 
-        // Lettura risposta server
+        // Lettura risposta server di default
         if ((bytes_read = cc.read_msg(msg_buffer)) == 0) {
             cout << "Server disconnected" << endl;
-            exit(1);
+            exit(-1);
         }
         printf("%s\n", msg_buffer);
     }
+    return 0;
 }
