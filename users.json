@@ -2,7 +2,7 @@
 
     "Alice" : { 
         "ip": "172.16.1.213",
-        "pub_key": "PEM/alice_public_key"
+        "pub_key": "PEM/alice_public_key.pem"
     },
 
     "Bob" : {

@@ -117,8 +117,6 @@ class Signer {
         }
 
         // deallocate buffers:
-        free(clear_buf);
-        free(sgnt_buf);
         EVP_PKEY_free(pubkey);
         EVP_MD_CTX_free(md_ctx);
 

@@ -276,6 +276,8 @@ int main(int argc, char *argv[]) {
                                 client_socket[i] = 0;
                                 continue;
                             }
+
+                            //cout << "(noncec)" << endl;
                             //BIO_dump_fp(stdout, (const char *)buffer, bytes_read);
 
                             // Seed OpenSSL PRNG
@@ -288,19 +290,34 @@ int main(int argc, char *argv[]) {
                             // Giustappongo i nonce (nonces||noncec)
                             memcpy(nonce_sc + NONCE_SIZE, buffer, NONCE_SIZE);
 
+                            //cout << "(nonces||noncec)" << endl;
+                            //BIO_dump_fp(stdout, (const char *)nonce_sc, NONCE_SIZE*2);
+
                             Signer signer;
                             unsigned char *signed_buff;
                             unsigned int signed_len;
-                            signer.sign(PRKEY_PATH, (unsigned char *)nonce_sc, NONCE_SIZE * 2, signed_buff, signed_len);
+                            if (signer.sign(PRKEY_PATH, (unsigned char *)nonce_sc, NONCE_SIZE * 2, signed_buff, signed_len) != 0) {
+                                perror("Not able to sign");
+                                continue;
+                            }
+
+                            //cout << "sig(nonces||noncec)" << endl;
+                            //BIO_dump_fp(stdout, (const char *)signed_buff, signed_len);
 
                             // Preparazione messaggio (nonces || sig(nonces||noncec))
                             memcpy(buffer, nonce_sc, NONCE_SIZE);
                             memcpy(buffer + NONCE_SIZE, signed_buff, signed_len);
+
+                            //cout << "(nonces || sig(nonces||noncec))" << endl;
+                            //BIO_dump_fp(stdout, (const char *)buffer, signed_len + NONCE_SIZE);
+
                             if (send(new_socket, buffer, signed_len + NONCE_SIZE, 0) != signed_len + NONCE_SIZE) {
                                 perror("Error in sending the message");
                             }
+
                             free(signed_buff);
 
+                            // sig(nonces)
                             if ((bytes_read = read(sd, buffer, MSG_MAX_LEN)) == 0) {
                                 //Somebody disconnected , get his details and print
                                 getpeername(sd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
@@ -313,16 +330,18 @@ int main(int argc, char *argv[]) {
                                 continue;
                             }
 
+                            // Verify sig(nonces)
                             if (signer.verify(users[username]["pub_key"].asString(), nonce_sc, NONCE_SIZE, (unsigned char *)buffer, bytes_read) == 0) {
                                 string message = "ACK";
                             } else {
                                 string message = "NV";
                             }
+
                             if (send(new_socket, message.c_str(), message.length(), 0) != message.length()) {
                                 perror("Error in sending the message");
                             }
 
-                            free(nonce_sc);  // todo: VA SALVATO DA QUALCHE PARTE PER INCREMENTARLO POI!!!!!!!!!!!!!!
+                            // todo: nonce_sc VA SALVATO DA QUALCHE PARTE PER INCREMENTARLO POI!!!!!!!!!!!!!!
                         }
 
                         continue;
