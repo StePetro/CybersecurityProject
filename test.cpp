@@ -1,24 +1,29 @@
+#include <arpa/inet.h>  //close
+#include <errno.h>
+#include <jsoncpp/json/json.h>
+#include <netinet/in.h>
 #include <openssl/bio.h>
 #include <openssl/rand.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>  //strlen
+#include <sys/socket.h>
+#include <sys/time.h>  //FD_SET, FD_ISSET, FD_ZERO macros
+#include <sys/types.h>
+#include <unistd.h>  //close
 
+#include <fstream>
 #include <iostream>
 
-#include "Certificate/certificate_verifier.h"
 #include "Signature/signer.h"
-#include "Socket/peer_client.h"
-#include "Socket/peer_server.h"
+
+using namespace std;
 
 main(int argc, char const *argv[]) {
-    Signer s;
-
-    string clear = "ciao";
-    unsigned char* firma;
-    unsigned int len;
-
-    s.sign("PEM/server_private_key.pem",(unsigned char*)clear.c_str(),clear.length(), firma, len );
-
-    CertificateVerifier cv;
-
-    cout << cv.verify_signed_file(firma,len,(unsigned char*)clear.c_str(),clear.length(),"PEM/ServerToClientCert.pem") << endl;
+    Json::Value users;
+    ifstream users_file("users.json", ifstream::binary);
+    users_file >> users;
+    users["Alice"]["Online"] = true;
+    cout << users["Alice"]<< endl;
     return 0;
 }

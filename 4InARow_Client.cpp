@@ -9,9 +9,11 @@
 #include "Socket/peer_server.h"
 
 #define SERVER_PORT 8080
-#define IP "172.16.1.213"
-#define NONCE_SIZE 96  //La stessa dell'IV di GCM
+#define IP_SERVER "172.16.1.213"
+#define NONCE_SIZE 4  //La stessa di un unsigned int
 #define CERT_SAVE_PATH "PEM/ServerToClientCert.pem"
+#define CA_CERT "PEM/ca_certificate.pem"
+#define CRL "PEM/crl.pem"
 
 using namespace std;
 
@@ -46,7 +48,7 @@ int cert_handler(unsigned char *msg_buffer, PeerClientConnection &cc) {
 
     CertificateVerifier cv;
 
-    if (cv.verify_server_certificate(cert_file_name, "PEM/ca_certificate.pem", "PEM/crl.pem") == 1) {
+    if (cv.verify_server_certificate(cert_file_name, CA_CERT, CRL) == 1) {
         cout << "The certificate is valid" << endl;
         cout << "Server: " << cv.get_server_name() << endl;
         cout << "CA: " << cv.get_ca_name() << endl;
@@ -58,7 +60,7 @@ int cert_handler(unsigned char *msg_buffer, PeerClientConnection &cc) {
     return 0;
 }
 
-int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned char *&nonce_c) {
+int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned char *&nonce_s) {
     long bytes_read = 0;
 
     // Lettura risposta server
@@ -87,8 +89,8 @@ int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned 
         // Mando solo noncec
         cc.send_msg(nonce_sc + NONCE_SIZE, NONCE_SIZE);
 
-        cout << "noncec" << endl;
-        BIO_dump_fp(stdout, (const char *)nonce_sc + NONCE_SIZE, NONCE_SIZE);
+        //cout << "noncec" << endl;
+        //BIO_dump_fp(stdout, (const char *)nonce_sc + NONCE_SIZE, NONCE_SIZE);
 
         // Lettura risposta server
         // messaggio = (nonces || sig(nonces||noncec))
@@ -97,17 +99,17 @@ int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned 
             return -1;
         }
 
-        cout << "(nonces || sig(nonces||noncec)" << endl;
-        BIO_dump_fp(stdout, (const char *)msg_buffer, bytes_read);
+        //cout << "(nonces || sig(nonces||noncec)" << endl;
+        //BIO_dump_fp(stdout, (const char *)msg_buffer, bytes_read);
 
         // Giustappongo i due nonce: (nonces||noncec)
         memcpy(nonce_sc, msg_buffer, NONCE_SIZE);
 
-        cout << "(nonces||noncec)" << endl;
-        BIO_dump_fp(stdout, (const char *)nonce_sc, NONCE_SIZE * 2);
+        //cout << "(nonces||noncec)" << endl;
+       // BIO_dump_fp(stdout, (const char *)nonce_sc, NONCE_SIZE * 2);
 
-        cout << "sig(nonces||noncec)" << endl;
-        BIO_dump_fp(stdout, (const char *)msg_buffer + NONCE_SIZE, bytes_read - NONCE_SIZE);
+        //cout << "sig(nonces||noncec)" << endl;
+        //BIO_dump_fp(stdout, (const char *)msg_buffer + NONCE_SIZE, bytes_read - NONCE_SIZE);
 
         CertificateVerifier cv;
 
@@ -118,7 +120,6 @@ int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned 
             return -1;
         }
 
-        Signer s;
         unsigned char *signed_msg;
         unsigned int signed_msg_size;
         string private_key_path;
@@ -126,7 +127,7 @@ int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned 
         cin >> private_key_path;
 
         // sig(nonces)
-        if(s.sign(private_key_path, nonce_sc, NONCE_SIZE, signed_msg, signed_msg_size) != 0){
+        if(sign(private_key_path, nonce_sc, NONCE_SIZE, signed_msg, signed_msg_size) != 0){
             return -1;
         }
 
@@ -150,8 +151,8 @@ int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned 
             free(signed_msg);
             cout << "Login completed" << endl;
             // Salvo il nonce e svuoto la memoria
-            nonce_c = (unsigned char *)malloc(NONCE_SIZE);
-            memcpy(nonce_c, nonce_sc + NONCE_SIZE, NONCE_SIZE);
+            nonce_s = (unsigned char *)malloc(NONCE_SIZE);
+            memcpy(nonce_s, nonce_sc, NONCE_SIZE);
             free(nonce_sc);
             return 0;
         }
@@ -165,7 +166,7 @@ main(int argc, char const *argv[]) {
     unsigned char *nonce;
 
     PeerClientConnection cc;
-    cc.initialization(IP, SERVER_PORT);
+    cc.initialization(IP_SERVER, SERVER_PORT);
 
     // Lettura messaggio benvenuto
     if ((bytes_read = cc.read_msg(msg_buffer)) == 0) {
@@ -210,6 +211,4 @@ main(int argc, char const *argv[]) {
         }
         printf("%s\n", msg_buffer);
     }
-
-    return 0;
 }

@@ -27,7 +27,7 @@ using namespace std;
 #define MAX_PENDING_CONNECTIONS 3
 #define CERTIFICATE_PATH "PEM/server_certificate.pem"
 #define PRKEY_PATH "PEM/server_private_key.pem"
-#define NONCE_SIZE 96  //La stessa dell'IV di GCM
+#define NONCE_SIZE 4  //La stessa di un unsigned int
 
 // Un semplice server multi-connessione sulla porta 8080 che gestisce fino a
 // 30 connessioni simultanee con buffer di lunghezza fissa
@@ -265,6 +265,7 @@ int main(int argc, char *argv[]) {
                                 perror("Error in sending the message");
                             }
 
+                            // Legge (noncec)
                             if ((bytes_read = read(sd, buffer, MSG_MAX_LEN)) == 0) {
                                 //Somebody disconnected , get his details and print
                                 getpeername(sd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
@@ -293,10 +294,9 @@ int main(int argc, char *argv[]) {
                             //cout << "(nonces||noncec)" << endl;
                             //BIO_dump_fp(stdout, (const char *)nonce_sc, NONCE_SIZE*2);
 
-                            Signer signer;
                             unsigned char *signed_buff;
                             unsigned int signed_len;
-                            if (signer.sign(PRKEY_PATH, (unsigned char *)nonce_sc, NONCE_SIZE * 2, signed_buff, signed_len) != 0) {
+                            if (sign(PRKEY_PATH, (unsigned char *)nonce_sc, NONCE_SIZE * 2, signed_buff, signed_len) != 0) {
                                 perror("Not able to sign");
                                 continue;
                             }
@@ -331,7 +331,7 @@ int main(int argc, char *argv[]) {
                             }
 
                             // Verify sig(nonces)
-                            if (signer.verify(users[username]["pub_key"].asString(), nonce_sc, NONCE_SIZE, (unsigned char *)buffer, bytes_read) == 0) {
+                            if (verify_sign(users[username]["pub_key"].asString(), nonce_sc, NONCE_SIZE, (unsigned char *)buffer, bytes_read) == 0) {
                                 string message = "ACK";
                             } else {
                                 string message = "NV";
@@ -341,9 +341,23 @@ int main(int argc, char *argv[]) {
                                 perror("Error in sending the message");
                             }
 
-                            // todo: nonce_sc VA SALVATO DA QUALCHE PARTE PER INCREMENTARLO POI!!!!!!!!!!!!!!
-                        }
+                            // Prende le informazioni sull'utente e le salva nella struttura json (non nel file)
+                            getpeername(sd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
+                            users[username]["IP"] = inet_ntoa(address.sin_addr);
+                            users[username]["PORT"] = ntohs(address.sin_port);
+                            users[username]["online"] = true;
 
+                            unsigned int* nonce_s_pointer = (unsigned int *)malloc(NONCE_SIZE + 1);
+                            memcpy(nonce_s_pointer, nonce_sc, NONCE_SIZE);
+
+                            unsigned int nonce_s = *nonce_s_pointer;
+
+                            users[username]["nonce"] = nonce_s;
+
+                            cout << users << endl;
+
+                        }
+                        unsigned char *nonce_sc = (unsigned char *)malloc(NONCE_SIZE * 2);
                         continue;
                     }
 

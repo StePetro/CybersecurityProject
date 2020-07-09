@@ -1,18 +1,17 @@
-#include <iostream> 
-#include <string>
-#include <stdio.h> // for fopen(), etc.
-#include <limits.h> // for INT_MAX
-#include <string.h> // for memset()
+#include <limits.h>  // for INT_MAX
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/rand.h>
+#include <stdio.h>   // for fopen(), etc.
+#include <string.h>  // for memset()
 
+#include <iostream>
+#include <string>
 
 using namespace std;
 
 // Inizio generato da riga di comando -> openssl dhparam -C 2048
-static DH *get_dh2048_auto(void)
-{
+static DH* get_dh2048_auto(void) {
     static unsigned char dhp_2048[] = {
         0xF9, 0xEA, 0x2A, 0x73, 0x80, 0x26, 0x19, 0xE4, 0x9F, 0x4B,
         0x88, 0xCB, 0xBF, 0x49, 0x08, 0x60, 0xC5, 0xBE, 0x41, 0x42,
@@ -39,20 +38,17 @@ static DH *get_dh2048_auto(void)
         0x14, 0x1C, 0x66, 0x22, 0xDA, 0x35, 0x1D, 0x6D, 0x53, 0x98,
         0xA8, 0xDD, 0xD7, 0x5D, 0x99, 0x13, 0x19, 0x3F, 0x58, 0x8C,
         0x4F, 0x56, 0x5B, 0x16, 0xE8, 0x59, 0x79, 0x81, 0x90, 0x7D,
-        0x7C, 0x75, 0x55, 0xB8, 0x50, 0x63
-    };
+        0x7C, 0x75, 0x55, 0xB8, 0x50, 0x63};
     static unsigned char dhg_2048[] = {
-        0x02
-    };
-    DH *dh = DH_new();
+        0x02};
+    DH* dh = DH_new();
     BIGNUM *p, *g;
 
     if (dh == NULL)
         return NULL;
     p = BN_bin2bn(dhp_2048, sizeof(dhp_2048), NULL);
     g = BN_bin2bn(dhg_2048, sizeof(dhg_2048), NULL);
-    if (p == NULL || g == NULL
-            || !DH_set0_pqg(dh, p, NULL, g)) {
+    if (p == NULL || g == NULL || !DH_set0_pqg(dh, p, NULL, g)) {
         DH_free(dh);
         BN_free(p);
         BN_free(g);
@@ -62,277 +58,342 @@ static DH *get_dh2048_auto(void)
 }
 // Fine codice generato da riga di comando -> openssl dhparam -C 2048
 
-
-
-int handleErrors(){
-	printf("An error occourred.\n");
-	exit(1);
+int handleErrors() {
+    printf("An error occourred.\n");
+    exit(1);
 }
-		
+
 int main() {
-/*GENERATING MY EPHEMERAL KEY*/
-/* Use built-in parameters */
-printf("Start: loading standard DH parameters\n");
-EVP_PKEY *params;
-if(NULL == (params = EVP_PKEY_new())) handleErrors();
-DH* temp = get_dh2048_auto();
-if(1 != EVP_PKEY_set1_DH(params,temp)) handleErrors();
-DH_free(temp);
-printf("\n");
-printf("Generating ephemeral DH KeyPair\n");
-/* Create context for the key generation */
-EVP_PKEY_CTX *DHctx;
-if(!(DHctx = EVP_PKEY_CTX_new(params, NULL))) handleErrors();
-/* Generate a new key */
-EVP_PKEY *my_dhkey = NULL;
-if(1 != EVP_PKEY_keygen_init(DHctx)) handleErrors();
-if(1 != EVP_PKEY_keygen(DHctx, &my_dhkey)) handleErrors();
+    /*GENERATING MY EPHEMERAL KEY*/
+    /* Use built-in parameters */
+    printf("Start: loading standard DH parameters\n");
+    EVP_PKEY* params;
+    if (NULL == (params = EVP_PKEY_new())) handleErrors();
+    DH* temp = DH_get_2048_224();
+    if (1 != EVP_PKEY_set1_DH(params, temp)) handleErrors();
+    DH_free(temp);
+    printf("\n");
+    printf("Generating ephemeral DH KeyPair\n");
+    /* Create context for the key generation */
+    EVP_PKEY_CTX* DHctx;
+    if (!(DHctx = EVP_PKEY_CTX_new(params, NULL))) handleErrors();
+    /* Generate a new key */
+    EVP_PKEY* my_dhkey = NULL;
+    if (1 != EVP_PKEY_keygen_init(DHctx)) handleErrors();
+    if (1 != EVP_PKEY_keygen(DHctx, &my_dhkey)) handleErrors();
 
-/*write my public key into a file, so the other client can read it*/
-string my_pubkey_file_name;
-cout << "Please, type the PEM file that will contain your DH public key: ";
-getline(cin, my_pubkey_file_name);
-if(!cin) { cerr << "Error during input\n"; exit(1); }
-FILE* p1w = fopen(my_pubkey_file_name.c_str(), "w");
-if(!p1w){ cerr << "Error: cannot open file '"<< my_pubkey_file_name << "' (missing?)\n"; exit(1); }
-PEM_write_PUBKEY(p1w, my_dhkey);
-fclose(p1w);
-string peer_pubkey_file_name;
+    /*write my public key into a file, so the other client can read it*/
+    string my_pubkey_file_name;
+    cout << "Please, type the PEM file that will contain your DH public key: ";
+    getline(cin, my_pubkey_file_name);
+    if (!cin) {
+        cerr << "Error during input\n";
+        exit(1);
+    }
+    FILE* p1w = fopen(my_pubkey_file_name.c_str(), "w");
+    if (!p1w) {
+        cerr << "Error: cannot open file '" << my_pubkey_file_name << "' (missing?)\n";
+        exit(1);
+    }
+    PEM_write_PUBKEY(p1w, my_dhkey);
+    fclose(p1w);
+    string peer_pubkey_file_name;
 
-cout << "Please, type the PEM file that contains the peer's DH public key: ";
-getline(cin, peer_pubkey_file_name);
-if(!cin) { cerr << "Error during input\n"; exit(1); }
-/*Load peer public key from a file*/
-FILE* p2r = fopen(peer_pubkey_file_name.c_str(), "r");
-if(!p2r){ cerr << "Error: cannot open file '"<< peer_pubkey_file_name <<"' (missing?)\n"; exit(1); }
-EVP_PKEY* peer_pubkey = PEM_read_PUBKEY(p2r, NULL, NULL, NULL);
-fclose(p2r);
-if(!peer_pubkey){ cerr << "Error: PEM_read_PUBKEY returned NULL\n"; exit(1); }
+    cout << "Please, type the PEM file that contains the peer's DH public key: ";
+    getline(cin, peer_pubkey_file_name);
+    if (!cin) {
+        cerr << "Error during input\n";
+        exit(1);
+    }
+    /*Load peer public key from a file*/
+    FILE* p2r = fopen(peer_pubkey_file_name.c_str(), "r");
+    if (!p2r) {
+        cerr << "Error: cannot open file '" << peer_pubkey_file_name << "' (missing?)\n";
+        exit(1);
+    }
+    EVP_PKEY* peer_pubkey = PEM_read_PUBKEY(p2r, NULL, NULL, NULL);
+    fclose(p2r);
+    if (!peer_pubkey) {
+        cerr << "Error: PEM_read_PUBKEY returned NULL\n";
+        exit(1);
+    }
 
-printf("Deriving a shared secret\n");
-/*creating a context, the buffer for the shared key and an int for its length*/
-EVP_PKEY_CTX *derive_ctx;
-unsigned char *skey;
-size_t skeylen;
-derive_ctx = EVP_PKEY_CTX_new(my_dhkey,NULL);
-if (!derive_ctx) handleErrors();
-if (EVP_PKEY_derive_init(derive_ctx) <= 0) handleErrors();
-/*Setting the peer with its pubkey*/
-if (EVP_PKEY_derive_set_peer(derive_ctx, peer_pubkey) <= 0) handleErrors();
-/* Determine buffer length, by performing a derivation but writing the result nowhere */
-EVP_PKEY_derive(derive_ctx, NULL, &skeylen);
-/*allocate buffer for the shared secret*/
-skey = (unsigned char*)(malloc(int(skeylen)));
-if (!skey) handleErrors();
-/*Perform again the derivation and store it in skey buffer*/
-if (EVP_PKEY_derive(derive_ctx, skey, &skeylen) <= 0) handleErrors();
-printf("Here it is the shared secret: \n");
-BIO_dump_fp (stdout, (const char *)skey, skeylen);
-/*WARNING! YOU SHOULD NOT USE THE DERIVED SECRET AS A SESSION KEY!
+    printf("Deriving a shared secret\n");
+    /*creating a context, the buffer for the shared key and an int for its length*/
+    EVP_PKEY_CTX* derive_ctx;
+    unsigned char* skey;
+    size_t skeylen;
+    derive_ctx = EVP_PKEY_CTX_new(my_dhkey, NULL);
+    if (!derive_ctx) handleErrors();
+    if (EVP_PKEY_derive_init(derive_ctx) <= 0) handleErrors();
+    /*Setting the peer with its pubkey*/
+    if (EVP_PKEY_derive_set_peer(derive_ctx, peer_pubkey) <= 0) handleErrors();
+    /* Determine buffer length, by performing a derivation but writing the result nowhere */
+    EVP_PKEY_derive(derive_ctx, NULL, &skeylen);
+    /*allocate buffer for the shared secret*/
+    skey = (unsigned char*)(malloc(int(skeylen)));
+    if (!skey) handleErrors();
+    /*Perform again the derivation and store it in skey buffer*/
+    if (EVP_PKEY_derive(derive_ctx, skey, &skeylen) <= 0) handleErrors();
+    printf("Here it is the shared secret: \n");
+    BIO_dump_fp(stdout, (const char*)skey, skeylen);
+    /*WARNING! YOU SHOULD NOT USE THE DERIVED SECRET AS A SESSION KEY!
  * IS COMMON PRACTICE TO HASH THE DERIVED SHARED SECRET TO OBTAIN A SESSION KEY.
  * IN NEXT LABORATORY LESSON WE ADDRESS HASHING!
  */
-//FREE EVERYTHING INVOLVED WITH THE EXCHANGE (not the shared secret tho)
-EVP_PKEY_CTX_free(derive_ctx);
-EVP_PKEY_free(peer_pubkey);
-EVP_PKEY_free(my_dhkey);
-EVP_PKEY_CTX_free(DHctx);
-EVP_PKEY_free(params);
+    //FREE EVERYTHING INVOLVED WITH THE EXCHANGE (not the shared secret tho)
+    EVP_PKEY_CTX_free(derive_ctx);
+    EVP_PKEY_free(peer_pubkey);
+    EVP_PKEY_free(my_dhkey);
+    EVP_PKEY_CTX_free(DHctx);
+    EVP_PKEY_free(params);
 
+    //SECOND PART: ENCRYTPION OF MY MESSAGE.
 
-//SECOND PART: ENCRYTPION OF MY MESSAGE.
-	
-int ret; // used for return values   
-// read the file to encrypt from keyboard:
-string clear_file_name;
-cout << "Please, type the file to encrypt: ";
-getline(cin, clear_file_name);
-if(!cin) { cerr << "Error during input\n"; exit(1); }
-// open the file to encrypt:
-FILE* clear_file = fopen(clear_file_name.c_str(), "rb");
-if(!clear_file) { cerr << "Error: cannot open file '" << clear_file_name << "' (file does not exist?)\n"; exit(1); }
+    int ret;  // used for return values
+    // read the file to encrypt from keyboard:
+    string clear_file_name;
+    cout << "Please, type the file to encrypt: ";
+    getline(cin, clear_file_name);
+    if (!cin) {
+        cerr << "Error during input\n";
+        exit(1);
+    }
+    // open the file to encrypt:
+    FILE* clear_file = fopen(clear_file_name.c_str(), "rb");
+    if (!clear_file) {
+        cerr << "Error: cannot open file '" << clear_file_name << "' (file does not exist?)\n";
+        exit(1);
+    }
 
-// get the file size: 
-// (assuming no failures in fseek() and ftell())
-fseek(clear_file, 0, SEEK_END);
-long int clear_size = ftell(clear_file);
-fseek(clear_file, 0, SEEK_SET);
-// read the plaintext from file:
-unsigned char* clear_buf = (unsigned char*)malloc(clear_size);
-if(!clear_buf) { cerr << "Error: malloc returned NULL (file too big?)\n"; exit(1); }
-ret = fread(clear_buf, 1, clear_size, clear_file);
-if(ret < clear_size) { cerr << "Error while reading file '" << clear_file_name << "'\n"; exit(1); }
-fclose(clear_file);
+    // get the file size:
+    // (assuming no failures in fseek() and ftell())
+    fseek(clear_file, 0, SEEK_END);
+    long int clear_size = ftell(clear_file);
+    fseek(clear_file, 0, SEEK_SET);
+    // read the plaintext from file:
+    unsigned char* clear_buf = (unsigned char*)malloc(clear_size);
+    if (!clear_buf) {
+        cerr << "Error: malloc returned NULL (file too big?)\n";
+        exit(1);
+    }
+    ret = fread(clear_buf, 1, clear_size, clear_file);
+    if (ret < clear_size) {
+        cerr << "Error while reading file '" << clear_file_name << "'\n";
+        exit(1);
+    }
+    fclose(clear_file);
 
-// declare some useful variables:
-const EVP_CIPHER* cipher = EVP_aes_128_cbc();
-int iv_len = EVP_CIPHER_iv_length(cipher);
-int block_size = EVP_CIPHER_block_size(cipher);
+    // declare some useful variables:
+    const EVP_CIPHER* cipher = EVP_aes_128_cbc();
+    int iv_len = EVP_CIPHER_iv_length(cipher);
+    int block_size = EVP_CIPHER_block_size(cipher);
 
-// Assume key is the first 16 bytes of the shared secret (this is not the best thing to do).
-unsigned char *key = (unsigned char*)malloc(iv_len);
-memcpy(key, skey, iv_len);
-// Allocate memory for and randomly generate IV:
-unsigned char* iv = (unsigned char*)malloc(iv_len);
-// Seed OpenSSL PRNG
-RAND_poll();
-// Generate 16 bytes at random. That is my IV
-RAND_bytes((unsigned char*)&iv[0],iv_len);
-   
-// check for possible integer overflow in (clear_size + block_size) --> PADDING!
-// (possible if the plaintext is too big, assume non-negative clear_size and block_size):
-if(clear_size > INT_MAX - block_size) { cerr <<"Error: integer overflow (file too big?)\n"; exit(1); }
-// allocate a buffer for the ciphertext:
-int enc_buffer_size = clear_size + block_size;
-unsigned char* cphr_buf = (unsigned char*)malloc(enc_buffer_size);
-if(!cphr_buf) { cerr << "Error: malloc returned NULL (file too big?)\n"; exit(1); }
-   
-//Create and initialise the context with used cipher, key and iv
-EVP_CIPHER_CTX *ctx;
-ctx = EVP_CIPHER_CTX_new();
-if(!ctx){ cerr << "Error: EVP_CIPHER_CTX_new returned NULL\n"; exit(1); }
-ret = EVP_EncryptInit(ctx, cipher, key, iv);
-if(ret != 1){
-	cerr <<"Error: EncryptInit Failed\n";
-	exit(1);
-}
-int update_len = 0; // bytes encrypted at each chunk
-int total_len = 0; // total encrypted bytes
-  
-// Encrypt Update: one call is enough because our file is small.
-ret = EVP_EncryptUpdate(ctx, cphr_buf, &update_len, clear_buf, clear_size);
-if(ret != 1){
-    cerr <<"Error: EncryptUpdate Failed\n";
-    exit(1);
-}
-total_len += update_len;
- 
-//Encrypt Final. Finalize the encryption and adds the padding
-ret = EVP_EncryptFinal(ctx, cphr_buf + total_len, &update_len);
-if(ret != 1){
-    cerr <<"Error: EncryptFinal Failed\n";
-    exit(1);
-}
-total_len += update_len;
-int cphr_size = total_len;
+    // Assume key is the first 16 bytes of the shared secret (this is not the best thing to do).
+    unsigned char* key = (unsigned char*)malloc(iv_len);
+    memcpy(key, skey, iv_len);
+    // Allocate memory for and randomly generate IV:
+    unsigned char* iv = (unsigned char*)malloc(iv_len);
+    // Seed OpenSSL PRNG
+    RAND_poll();
+    // Generate 16 bytes at random. That is my IV
+    RAND_bytes((unsigned char*)&iv[0], iv_len);
 
-// delete the context and the plaintext from memory:
-EVP_CIPHER_CTX_free(ctx);
-// Telling the compiler it MUST NOT optimize the following instruction. 
+    // check for possible integer overflow in (clear_size + block_size) --> PADDING!
+    // (possible if the plaintext is too big, assume non-negative clear_size and block_size):
+    if (clear_size > INT_MAX - block_size) {
+        cerr << "Error: integer overflow (file too big?)\n";
+        exit(1);
+    }
+    // allocate a buffer for the ciphertext:
+    int enc_buffer_size = clear_size + block_size;
+    unsigned char* cphr_buf = (unsigned char*)malloc(enc_buffer_size);
+    if (!cphr_buf) {
+        cerr << "Error: malloc returned NULL (file too big?)\n";
+        exit(1);
+    }
+
+    //Create and initialise the context with used cipher, key and iv
+    EVP_CIPHER_CTX* ctx;
+    ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) {
+        cerr << "Error: EVP_CIPHER_CTX_new returned NULL\n";
+        exit(1);
+    }
+    ret = EVP_EncryptInit(ctx, cipher, key, iv);
+    if (ret != 1) {
+        cerr << "Error: EncryptInit Failed\n";
+        exit(1);
+    }
+    int update_len = 0;  // bytes encrypted at each chunk
+    int total_len = 0;   // total encrypted bytes
+
+    // Encrypt Update: one call is enough because our file is small.
+    ret = EVP_EncryptUpdate(ctx, cphr_buf, &update_len, clear_buf, clear_size);
+    if (ret != 1) {
+        cerr << "Error: EncryptUpdate Failed\n";
+        exit(1);
+    }
+    total_len += update_len;
+
+    //Encrypt Final. Finalize the encryption and adds the padding
+    ret = EVP_EncryptFinal(ctx, cphr_buf + total_len, &update_len);
+    if (ret != 1) {
+        cerr << "Error: EncryptFinal Failed\n";
+        exit(1);
+    }
+    total_len += update_len;
+    int cphr_size = total_len;
+
+    // delete the context and the plaintext from memory:
+    EVP_CIPHER_CTX_free(ctx);
+// Telling the compiler it MUST NOT optimize the following instruction.
 // With optimization the memset would be skipped, because of the next free instruction.
 #pragma optimize("", off)
-   memset(clear_buf, 0, clear_size);
+    memset(clear_buf, 0, clear_size);
 #pragma optimize("", on)
-   free(clear_buf);
-   
-// write the IV and the ciphertext into a '.enc' file:
-string cphr_file_name = clear_file_name + ".enc";
-FILE* cphr_file = fopen(cphr_file_name.c_str(), "wb");
-if(!cphr_file) { cerr << "Error: cannot open file '" << cphr_file_name << "' (no permissions?)\n"; exit(1); }
-   
-ret = fwrite(iv, 1, EVP_CIPHER_iv_length(cipher), cphr_file);
-if(ret < EVP_CIPHER_iv_length(cipher)) { cerr << "Error while writing the file '" << cphr_file_name << "'\n"; exit(1); }
-  
-ret = fwrite(cphr_buf, 1, cphr_size, cphr_file);
-if(ret < cphr_size) { cerr << "Error while writing the file '" << cphr_file_name << "'\n"; exit(1); }
-   
-fclose(cphr_file);
-cout << "File '"<< clear_file_name << "' encrypted into file '" << cphr_file_name << "'\n";
+    free(clear_buf);
 
-// deallocate buffers:
-free(cphr_buf);
-free(iv);
+    // write the IV and the ciphertext into a '.enc' file:
+    string cphr_file_name = clear_file_name + ".enc";
+    FILE* cphr_file = fopen(cphr_file_name.c_str(), "wb");
+    if (!cphr_file) {
+        cerr << "Error: cannot open file '" << cphr_file_name << "' (no permissions?)\n";
+        exit(1);
+    }
 
-// THIRD PART DECRYPTION OF PEER MESSAGE.
+    ret = fwrite(iv, 1, EVP_CIPHER_iv_length(cipher), cphr_file);
+    if (ret < EVP_CIPHER_iv_length(cipher)) {
+        cerr << "Error while writing the file '" << cphr_file_name << "'\n";
+        exit(1);
+    }
 
-// read the file to decrypt from keyboard:
-string peer_file_name;
-cout << "Please, type the file to decrypt: ";
-getline(cin, peer_file_name);
-if(!cin) { cerr << "Error during input\n"; exit(1); }
+    ret = fwrite(cphr_buf, 1, cphr_size, cphr_file);
+    if (ret < cphr_size) {
+        cerr << "Error while writing the file '" << cphr_file_name << "'\n";
+        exit(1);
+    }
 
-// open the file to decrypt:
-FILE* peer_file = fopen(peer_file_name.c_str(), "rb");
-if(!peer_file) { cerr << "Error: cannot open file '" << peer_file_name << "' (file does not exist?)\n"; exit(1); }
+    fclose(cphr_file);
+    cout << "File '" << clear_file_name << "' encrypted into file '" << cphr_file_name << "'\n";
 
-// get the file size: 
-// (assuming no failures in fseek() and ftell())
-fseek(peer_file, 0, SEEK_END);
-long int peer_file_size = ftell(peer_file);
-fseek(peer_file, 0, SEEK_SET);
- 
-// Allocate buffer for IV, ciphertext, plaintext
-unsigned char* peer_iv = (unsigned char*)malloc(iv_len);
-int peer_cphr_size = peer_file_size - iv_len;
-unsigned char* peer_msg_buf = (unsigned char*)malloc(peer_cphr_size);
-unsigned char* peer_clear_buf = (unsigned char*)malloc(peer_cphr_size);
-if(!peer_iv || !peer_msg_buf || !peer_clear_buf) { cerr << "Error: malloc returned NULL (file too big?)\n"; exit(1); }
+    // deallocate buffers:
+    free(cphr_buf);
+    free(iv);
 
-// read the IV and the ciphertext from file:
-ret = fread(peer_iv, 1, iv_len, peer_file);
-if(ret < iv_len) { cerr << "Error while reading file '" << peer_file_name << "'\n"; exit(1); }
-ret = fread(peer_msg_buf, 1, peer_cphr_size, peer_file);
-if(ret < peer_cphr_size) { cerr << "Error while reading file '" << peer_file_name << "'\n"; exit(1); }
-fclose(peer_file);
+    // THIRD PART DECRYPTION OF PEER MESSAGE.
 
-//Create and initialise the context
-EVP_CIPHER_CTX *peer_ctx;
-peer_ctx = EVP_CIPHER_CTX_new();
-if(!peer_ctx){ cerr << "Error: EVP_CIPHER_CTX_new returned NULL\n"; exit(1); }
-ret = EVP_DecryptInit(peer_ctx, cipher, key, peer_iv);
-if(ret != 1){
-  cerr <<"Error: DecryptInit Failed\n";
-  exit(1);
-}
+    // read the file to decrypt from keyboard:
+    string peer_file_name;
+    cout << "Please, type the file to decrypt: ";
+    getline(cin, peer_file_name);
+    if (!cin) {
+        cerr << "Error during input\n";
+        exit(1);
+    }
 
-int peer_update_len = 0; // bytes decrypted at each chunk
-int peer_total_len = 0; // total decrypted bytes
+    // open the file to decrypt:
+    FILE* peer_file = fopen(peer_file_name.c_str(), "rb");
+    if (!peer_file) {
+        cerr << "Error: cannot open file '" << peer_file_name << "' (file does not exist?)\n";
+        exit(1);
+    }
 
-// Decrypt Update: one call is enough because our ciphertext is small.
-ret = EVP_DecryptUpdate(peer_ctx, peer_clear_buf, &peer_update_len, peer_msg_buf, peer_cphr_size);
-if(ret != 1){
-  cerr <<"Error: DecryptUpdate Failed\n";
-  exit(1);
-}
-peer_total_len += peer_update_len;
+    // get the file size:
+    // (assuming no failures in fseek() and ftell())
+    fseek(peer_file, 0, SEEK_END);
+    long int peer_file_size = ftell(peer_file);
+    fseek(peer_file, 0, SEEK_SET);
 
-//Decrypt Final. Finalize the Decryption and adds the padding
-ret = EVP_DecryptFinal(peer_ctx, peer_clear_buf + peer_total_len, &peer_update_len);
-if(ret != 1){
-  cerr <<"Error: DecryptFinal Failed\n";
-  exit(1);
-}
-peer_total_len += peer_update_len;
-int peer_clear_size = peer_total_len;
+    // Allocate buffer for IV, ciphertext, plaintext
+    unsigned char* peer_iv = (unsigned char*)malloc(iv_len);
+    int peer_cphr_size = peer_file_size - iv_len;
+    unsigned char* peer_msg_buf = (unsigned char*)malloc(peer_cphr_size);
+    unsigned char* peer_clear_buf = (unsigned char*)malloc(peer_cphr_size);
+    if (!peer_iv || !peer_msg_buf || !peer_clear_buf) {
+        cerr << "Error: malloc returned NULL (file too big?)\n";
+        exit(1);
+    }
 
-// delete the context from memory:
-EVP_CIPHER_CTX_free(peer_ctx);
+    // read the IV and the ciphertext from file:
+    ret = fread(peer_iv, 1, iv_len, peer_file);
+    if (ret < iv_len) {
+        cerr << "Error while reading file '" << peer_file_name << "'\n";
+        exit(1);
+    }
+    ret = fread(peer_msg_buf, 1, peer_cphr_size, peer_file);
+    if (ret < peer_cphr_size) {
+        cerr << "Error while reading file '" << peer_file_name << "'\n";
+        exit(1);
+    }
+    fclose(peer_file);
 
+    //Create and initialise the context
+    EVP_CIPHER_CTX* peer_ctx;
+    peer_ctx = EVP_CIPHER_CTX_new();
+    if (!peer_ctx) {
+        cerr << "Error: EVP_CIPHER_CTX_new returned NULL\n";
+        exit(1);
+    }
+    ret = EVP_DecryptInit(peer_ctx, cipher, key, peer_iv);
+    if (ret != 1) {
+        cerr << "Error: DecryptInit Failed\n";
+        exit(1);
+    }
 
-// write the plaintext into a '.dec' file:
-string peer_clear_file_name = peer_file_name + ".dec";
-FILE* peer_clear_file = fopen(peer_clear_file_name.c_str(), "wb");
-if(!peer_clear_file) { cerr << "Error: cannot open file '" << peer_clear_file_name << "' (no permissions?)\n"; exit(1); }
-ret = fwrite(peer_clear_buf, 1, peer_clear_size, peer_clear_file);
-if(ret < peer_clear_size) { cerr << "Error while writing the file '" << peer_clear_file_name << "'\n"; exit(1); }
-fclose(peer_clear_file);
+    int peer_update_len = 0;  // bytes decrypted at each chunk
+    int peer_total_len = 0;   // total decrypted bytes
 
-// Just out of curiosity, print on stdout the used IV retrieved from file.
-cout<<"Used IV:"<<endl;
-BIO_dump_fp (stdout, (const char *)peer_iv, iv_len);
+    // Decrypt Update: one call is enough because our ciphertext is small.
+    ret = EVP_DecryptUpdate(peer_ctx, peer_clear_buf, &peer_update_len, peer_msg_buf, peer_cphr_size);
+    if (ret != 1) {
+        cerr << "Error: DecryptUpdate Failed\n";
+        exit(1);
+    }
+    peer_total_len += peer_update_len;
+
+    //Decrypt Final. Finalize the Decryption and adds the padding
+    ret = EVP_DecryptFinal(peer_ctx, peer_clear_buf + peer_total_len, &peer_update_len);
+    if (ret != 1) {
+        cerr << "Error: DecryptFinal Failed\n";
+        exit(1);
+    }
+    peer_total_len += peer_update_len;
+    int peer_clear_size = peer_total_len;
+
+    // delete the context from memory:
+    EVP_CIPHER_CTX_free(peer_ctx);
+
+    // write the plaintext into a '.dec' file:
+    string peer_clear_file_name = peer_file_name + ".dec";
+    FILE* peer_clear_file = fopen(peer_clear_file_name.c_str(), "wb");
+    if (!peer_clear_file) {
+        cerr << "Error: cannot open file '" << peer_clear_file_name << "' (no permissions?)\n";
+        exit(1);
+    }
+    ret = fwrite(peer_clear_buf, 1, peer_clear_size, peer_clear_file);
+    if (ret < peer_clear_size) {
+        cerr << "Error while writing the file '" << peer_clear_file_name << "'\n";
+        exit(1);
+    }
+    fclose(peer_clear_file);
+
+    // Just out of curiosity, print on stdout the used IV retrieved from file.
+    cout << "Used IV:" << endl;
+    BIO_dump_fp(stdout, (const char*)peer_iv, iv_len);
 
 // delete the plaintext from memory:
-// Telling the compiler it MUST NOT optimize the following instruction. 
+// Telling the compiler it MUST NOT optimize the following instruction.
 // With optimization the memset would be skipped, because of the next free instruction.
 #pragma optimize("", off)
-memset(peer_clear_buf, 0, peer_clear_size);
+    memset(peer_clear_buf, 0, peer_clear_size);
 #pragma optimize("", on)
-free(peer_clear_buf);
+    free(peer_clear_buf);
 
-cout << "File '"<< peer_file_name << "' decrypted into file '" << peer_clear_file_name << "', clear size is " << peer_clear_size << " bytes\n";
+    cout << "File '" << peer_file_name << "' decrypted into file '" << peer_clear_file_name << "', clear size is " << peer_clear_size << " bytes\n";
 
-// deallocate buffers:
-free(iv);
-free(peer_msg_buf);
-return 0;
+    // deallocate buffers:
+    free(iv);
+    free(peer_msg_buf);
+    return 0;
 }
