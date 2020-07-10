@@ -22,46 +22,50 @@ using namespace std;
 
 main(int argc, char const *argv[]) {
     
-    EVP_PKEY* params = NULL;
+    
     EVP_PKEY* keys_s = NULL;
+    EVP_PKEY* keys_s_des = NULL;
     EVP_PKEY* keys_c = NULL;
-    EVP_PKEY* public_key_s = NULL;
-    EVP_PKEY* public_keys_c = NULL;
+    unsigned char* public_key_s = NULL;
+    unsigned char* public_keys_c = NULL;
+    unsigned int size_s;
+    unsigned int size_c;
     unsigned char* skeyS = NULL;
     unsigned char* skeyC = NULL;
-    size_t len_s;
 
-    DHKE dhS;
-    DHKE dhC;
+    create_ephemeral_keys(keys_s);
 
-    dhS.Create_params(params);
+    create_ephemeral_keys(keys_c);
 
-    dhS.Create_private_key(params, keys_s, public_key_s);
-
+    cout << "Tutto ok" << endl;
+    //derive_session_key(keys_s, public_keys_c, skeyS);
     
-    dhC.Create_private_key(params, keys_c, public_keys_c);
+    //derive_session_key(keys_c, public_key_s, skeyC);
 
-    
-    dhS.Derive_session_key(keys_s, public_keys_c, skeyS);
-    
-    dhC.Derive_session_key(keys_c, public_key_s, skeyC);
+    cout << "Server dump" << endl;
+    BIO_dump_fp(stdout, (const char*) keys_s, EVP_PKEY_size(keys_s));
 
+    cout << "Client dump" << endl;
+    BIO_dump_fp(stdout, (const char*) keys_c, EVP_PKEY_size(keys_c));
 
+    serialize_pub_key(keys_s, public_key_s, size_s);
 
-    //free(buf);
+    cout << "chiave pubblica server serializzata: " << public_key_s << endl << "dimensione: " << size_s << endl;
 
-    EVP_PKEY_free(params);
-  
-    EVP_PKEY_free(public_key_s);
-  
-    EVP_PKEY_free(public_keys_c);
+    deserialize_pub_key(public_key_s, size_s, keys_s_des);
+
+    cout << "struttura deserializzata: " << endl;
+
+    BIO_dump_fp(stdout, (const char*) keys_s_des, EVP_PKEY_size(keys_s_des));
+
+    //derive_session_key(keys_s, keys_c, skeyS);
+    //derive_session_key(keys_c, keys_s, skeyC);
 
     EVP_PKEY_free(keys_s);
-
     EVP_PKEY_free(keys_c);
+    EVP_PKEY_free(keys_s_des);
+    //delete[] skeyS;
+    //delete[] skeyC;
 
-    delete[] skeyS;
-  
-    delete[] skeyC;
-
+    delete[] public_key_s;
 }

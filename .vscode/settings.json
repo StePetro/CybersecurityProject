@@ -59,6 +59,8 @@
         "iomanip": "cpp",
         "mutex": "cpp",
         "thread": "cpp",
-        "typeindex": "cpp"
+        "typeindex": "cpp",
+        "strstream": "cpp",
+        "cfenv": "cpp"
     }
 }

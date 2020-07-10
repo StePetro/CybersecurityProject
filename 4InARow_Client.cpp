@@ -11,12 +11,15 @@
 
 #define SERVER_PORT 8080
 #define IP_SERVER "172.16.1.213"
-#define NONCE_SIZE 4  //La stessa di un unsigned int
+#define NONCE_SIZE 128
 #define CERT_SAVE_PATH "PEM/ServerToClientCert.pem"
 #define CA_CERT "PEM/ca_certificate.pem"
 #define CRL "PEM/crl.pem"
 
 using namespace std;
+
+// Unsigned int a 128 bit, presente solo su alcuni compilatori
+typedef unsigned __int128 uint128_t;
 
 int cert_handler(unsigned char *msg_buffer, PeerClientConnection &cc) {
     // Gestisce la verifica del certificato se richiesta
@@ -60,7 +63,7 @@ int cert_handler(unsigned char *msg_buffer, PeerClientConnection &cc) {
     return 0;
 }
 
-int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned int &nonce) {
+int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc) {
     long bytes_read = 0;
 
     // Lettura risposta server alla /login:[nome_utente]
@@ -90,27 +93,24 @@ int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned 
 
         // Generazione nonce client casuale
         RAND_poll();
-        unsigned char *nonce_sc = new unsigned char[NONCE_SIZE * 2];  // Preparo lo spazio per 2 nonce giustapposti
-        RAND_bytes((unsigned char *)&nonce_sc[NONCE_SIZE], NONCE_SIZE);
+        unsigned char *nonce_c = new unsigned char[NONCE_SIZE];
+        RAND_bytes((unsigned char *)&nonce_c[NONCE_SIZE], NONCE_SIZE);
 
-        // Mando solo nonce_client
-        if (cc.send_msg(nonce_sc + NONCE_SIZE, NONCE_SIZE) != 0) {
+        // Mando nonce_c
+        if (cc.send_msg(nonce_c, NONCE_SIZE) != 0) {
             return -1;
         }
 
         // Lettura risposta server
-        // messaggio = (nonces || sig(nonces||noncec))
+        // messaggio = (nonces || sig(noncec))
         if ((bytes_read = cc.read_msg(msg_buffer)) == 0) {
             cout << "Server disconnected" << endl;
             return -1;
         }
 
-        // Giustappongo i due nonce: (nonces||noncec)
-        memcpy(nonce_sc, msg_buffer, NONCE_SIZE);
-
-        // Verifico sig(nonces||noncec) con il certificato del server
+        // Verifico sig(noncec) con il certificato del server
         CertificateVerifier cv;
-        if (cv.verify_signed_file(msg_buffer + NONCE_SIZE, bytes_read - NONCE_SIZE, nonce_sc, NONCE_SIZE * 2, CERT_SAVE_PATH) == 1) {
+        if (cv.verify_signed_file(msg_buffer + NONCE_SIZE, bytes_read - NONCE_SIZE, nonce_c, NONCE_SIZE, CERT_SAVE_PATH) == 1) {
             cout << "Correct server signature" << endl;
         } else {
             return -1;
@@ -124,7 +124,7 @@ int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned 
         cin >> private_key_path;
 
         // Firma: sig(nonces)
-        if (sign(private_key_path, nonce_sc, NONCE_SIZE, signed_msg, signed_msg_size) != 0) {
+        if (sign(private_key_path, msg_buffer, NONCE_SIZE, signed_msg, signed_msg_size) != 0) {
             return -1;
         }
 
@@ -152,12 +152,7 @@ int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned 
             // Salvo il nonce e svuoto la memoria
             delete[] signed_msg;
             cout << "Login completed successfully" << endl;
-            unsigned int *nonce_pointer = new unsigned int;
-            memcpy(nonce_pointer, nonce_sc, NONCE_SIZE);
-            nonce = *nonce_pointer;
-            cout << "The nonce is: " << nonce << endl;
-            delete[] nonce_sc;
-            delete nonce_pointer;
+            delete[] nonce_c;
             return 0;
         }
     }
@@ -168,7 +163,8 @@ main(int argc, char const *argv[]) {
     // Strutture dati utili
     unsigned char msg_buffer[MSG_MAX_LEN] = {0};
     long bytes_read = 0;
-    unsigned int nonce;
+    uint128_t nonce_with_server = 0;
+    uint128_t nonce_with_peer = 0;
 
     // Socket client
     PeerClientConnection cc;
@@ -195,9 +191,10 @@ main(int argc, char const *argv[]) {
 
         // Gestione richiesta certificato
         if (msg.compare(0, string("/login:").size(), "/login:") == 0) {
-            if (login_handler(msg_buffer, cc, nonce) != 0) {
+            if (login_handler(msg_buffer, cc) != 0) {
                 cout << "Login failed" << endl;
             }
+            nonce_with_server = 0;
             continue;
         }
 

@@ -15,6 +15,7 @@
 #include <fstream>
 #include <iostream>
 
+#include "Key_Exchange/DHKE.h"
 #include "Signature/signer.h"
 
 using namespace std;
@@ -27,7 +28,10 @@ using namespace std;
 #define MAX_PENDING_CONNECTIONS 3
 #define CERTIFICATE_PATH "PEM/server_certificate.pem"
 #define PRKEY_PATH "PEM/server_private_key.pem"
-#define NONCE_SIZE 4  //La stessa di un unsigned int
+#define NONCE_SIZE 128  //La stessa di un unsigned int
+
+// Unsigned int a 128 bit, presente solo su alcuni compilatori
+typedef unsigned __int128 uint128_t;
 
 int cert_handler(int socket) {
     // Apre il file del certificato
@@ -76,7 +80,7 @@ int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, cha
         // Se non è nel json risponde Not Found
         string message = "NF";
         if (send(socket, message.c_str(), message.length(), 0) != message.length()) {
-            perror("Error in sending the message");
+            cerr << "Error in sending the message" << endl;
         }
         return -1;
     }
@@ -85,7 +89,7 @@ int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, cha
         // L'utente è già online
         string message = "AL";
         if (send(socket, message.c_str(), message.length(), 0) != message.length()) {
-            perror("Error in sending the message");
+            cerr << "Error in sending the message" << endl;
         }
         return -1;
     }
@@ -93,11 +97,11 @@ int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, cha
     // Altrimenti manda un ACK se presente
     string message = "ACK";
     if (send(socket, message.c_str(), message.length(), 0) != message.length()) {
-        perror("Error in sending the message");
+        cerr << "Error in sending the message" << endl;
         return -1;
     }
 
-    // Legge (nonce) dal client
+    // Legge (nonce_c) dal client
     if ((bytes_read = read(socket, buffer, MSG_MAX_LEN)) == 0) {
         // Disconnessione, print delle informazioni
         getpeername(socket, (struct sockaddr *)&address, (socklen_t *)&addrlen);
@@ -111,35 +115,32 @@ int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, cha
         return -1;
     }
 
-    // Creo casualmente nonces del server
+    // Creo casualmente nonce_s del server
     RAND_poll();
-    unsigned char *nonce_sc = new unsigned char[NONCE_SIZE * 2];  // Alloco per due nonce in modo da giustapporli
-    RAND_bytes((unsigned char *)&nonce_sc[0], NONCE_SIZE);
+    unsigned char *nonce_s = new unsigned char[NONCE_SIZE];  // Alloco per due nonce in modo da giustapporli
+    RAND_bytes((unsigned char *)&nonce_s[0], NONCE_SIZE);
 
-    // Giustappongo i nonce (nonces||noncec)
-    memcpy(nonce_sc + NONCE_SIZE, buffer, NONCE_SIZE);
-
-    // Firma digitale dei nonce giustapposti con la chiave privata del server
+    // Firma digitale di nonce_c (nel buffer) con la chiave privata del server
     unsigned char *signed_buff;
     unsigned int signed_len;
-    if (sign(PRKEY_PATH, (unsigned char *)nonce_sc, NONCE_SIZE * 2, signed_buff, signed_len) != 0) {
-        perror("Not able to sign");
+    if (sign(PRKEY_PATH, (unsigned char *)buffer, NONCE_SIZE, signed_buff, signed_len) != 0) {
+        cerr << "Not able to sign" << endl;
         return -1;
     }
 
-    // Preparazione messaggio (nonces || sig(nonces||noncec))
-    memcpy(buffer, nonce_sc, NONCE_SIZE);
+    // Preparazione messaggio (nonces || sgn(nonce_c))
+    memcpy(buffer, nonce_s, NONCE_SIZE);
     memcpy(buffer + NONCE_SIZE, signed_buff, signed_len);
 
-    // Invio (nonces || sig(nonces||noncec))
+    // Invio (nonces || (nonces || sgn(nonce_c)))
     if (send(socket, buffer, signed_len + NONCE_SIZE, 0) != signed_len + NONCE_SIZE) {
-        perror("Error in sending the message");
+        cerr << "Error in sending the message" << endl;
         return -1;
     }
 
     delete[] signed_buff;
 
-    // Il client risponde con la firma del nonce del server: sig(nonces)
+    // Il client risponde con la firma del nonce del server: sig(nonce_s)
     if ((bytes_read = read(socket, buffer, MSG_MAX_LEN)) == 0) {
         // Disconnessione, print delle informazioni
         getpeername(socket, (struct sockaddr *)&address, (socklen_t *)&addrlen);
@@ -153,23 +154,19 @@ int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, cha
         return -1;
     }
 
-    // Verifica se la firma sig(nonces) è valida, tramite la chiave pubblica dell'utente che si sta loggando
-    if (verify_sign(users[username]["pub_key"].asString(), nonce_sc, NONCE_SIZE, (unsigned char *)buffer, bytes_read) == 0) {
+    // Verifica se la firma sig(nonce_s) è valida, tramite la chiave pubblica dell'utente che si sta loggando
+    if (verify_sign(users[username]["pub_key"].asString(), nonce_s, NONCE_SIZE, (unsigned char *)buffer, bytes_read) == 0) {
         string message = "ACK";  // Se era giusta
         if (send(socket, message.c_str(), message.length(), 0) != message.length()) {
-            perror("Error in sending the message");
+            cerr << "Error in sending the message" << endl;
             return -1;
         }
     } else {
         string message = "NV";  // Se non era valida
         if (send(socket, message.c_str(), message.length(), 0) != message.length()) {
-            perror("Error in sending the message");
+            cerr << "Error in sending the message" << endl;
         }
         return -1;
-    }
-
-    if (message.compare("NV") == 0) {
-        return -1;  // Se non è valida non continuo
     }
 
     // Prende le informazioni sull'utente e le salva nella struttura json in memoria (non nel file)
@@ -177,17 +174,41 @@ int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, cha
     users[username]["IP"] = inet_ntoa(address.sin_addr);
     users[username]["PORT"] = ntohs(address.sin_port);
 
-    // Salva il nonce trasformandolo in unsigned int per poterlo manipoare facilmente
-    unsigned int *nonce_s_pointer = new unsigned int;
-    memcpy(nonce_s_pointer, nonce_sc, NONCE_SIZE);
-    unsigned int nonce_s = *nonce_s_pointer;
-    users[username]["nonce"] = nonce_s;
-    delete nonce_s_pointer;
-    delete[] nonce_sc;
+    // Parte da 0 con il nonce e lo incrementa da ora in poi
+    uint128_t nonce = 0;
+    users[username]["nonce_pointer"] = &nonce;
+    cout << users << endl;
+    delete[] nonce_s;
 
     // Aggiungo anche l'informazione su quale user sta usando un certo slot dei socket
     socket_slots[i] = username;
 
+    //INIZIO NEGOZIAZIONE CHIAVE DI SESSIONE -------------------------------------------------------------------------
+    /*
+    EVP_PKEY *params = NULL;
+    EVP_PKEY *keys_server = NULL;  // Sia privata che pubblica
+    EVP_PKEY *public_key_server = NULL;
+    EVP_PKEY *public_key_client = NULL;
+    unsigned char *session_key = NULL;
+
+    // Creazione dei parametri "g" ed "n"
+    if (create_DH_params(params) != 0) {
+        cerr << "Error in parameters' creation" << endl;
+        return -1;
+    }
+
+    // Creazioni chiavi effimere
+    if(create_ephemeral_keys(params, keys_server, public_key_server) != 0){
+        cerr << "Error in ephemeral keys' creation" << endl;
+        return -1;
+    }
+
+    // messaggio = (nonce + 1 || params || public_key_server || sgn(nonce + 1 || params || public_key_server) )
+    users[username]["nonce"] = users[username]["nonce"].asUInt() + 1;
+    
+    unsigned char* to_sign_buff = new unsigned char[NONCE_SIZE + EVP_PKEY_size(params) + EVP_PKEY_size(public_key_server)];
+    to_sign_buff[0] = users[username]["nonce"].asUInt();
+    */
     return 0;
 }
 
