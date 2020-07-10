@@ -11,7 +11,7 @@
 #include <sys/time.h>  //FD_SET, FD_ISSET, FD_ZERO macros
 #include <sys/types.h>
 #include <unistd.h>  //close
-#include "DH/DHKE.h"
+#include "Key_Exchange/DHKE.h"
 
 #include <fstream>
 #include <iostream>
@@ -22,11 +22,13 @@ using namespace std;
 
 main(int argc, char const *argv[]) {
     
-    EVP_PKEY* params;
-    EVP_PKEY* pub_key_s;
-    EVP_PKEY* pub_key_c;
-    unsigned char* skeyS;
-    unsigned char* skeyC;
+    EVP_PKEY* params = NULL;
+    EVP_PKEY* keys_s = NULL;
+    EVP_PKEY* keys_c = NULL;
+    EVP_PKEY* public_key_s = NULL;
+    EVP_PKEY* public_keys_c = NULL;
+    unsigned char* skeyS = NULL;
+    unsigned char* skeyC = NULL;
     size_t len_s;
 
     DHKE dhS;
@@ -34,43 +36,32 @@ main(int argc, char const *argv[]) {
 
     dhS.Create_params(params);
 
-    //cout<<"Parametri creati"<< endl;
+    dhS.Create_private_key(params, keys_s, public_key_s);
 
-    dhS.Create_private_key(params, pub_key_s);
+    
+    dhC.Create_private_key(params, keys_c, public_keys_c);
 
-    EVP_PKEY_get_raw_public_key(pub_key_s, NULL, &len_s);
-
-    unsigned char * buf = (unsigned char*)(malloc(int(len_s)));
-
-    printf("Lunghezza chiave pubblica: %u", len_s);
-
-    EVP_PKEY_get_raw_public_key(pub_key_s, buf, &len_s);
-
-    //printf((const char*)buf);
-
-    //cout<<"chiave pubblica server creata!"<<endl;
-
-    dhC.Create_private_key(params, pub_key_c);
-
-    //cout<<"chiave pubblica client creata!"<<endl;
-
-    //cout<<"==================Server:"<< endl;
-    dhS.Derive_session_key(pub_key_s, pub_key_c, skeyS);
-    //cout<<"===================Client:"<<endl;
-    dhC.Derive_session_key(pub_key_c, pub_key_s, skeyC);
+    
+    dhS.Derive_session_key(keys_s, public_keys_c, skeyS);
+    
+    dhC.Derive_session_key(keys_c, public_key_s, skeyC);
 
 
 
-    free(buf);
+    //free(buf);
 
     EVP_PKEY_free(params);
   
-    EVP_PKEY_free(pub_key_s);
+    EVP_PKEY_free(public_key_s);
   
-    EVP_PKEY_free(pub_key_c);
+    EVP_PKEY_free(public_keys_c);
 
-    free(skeyS);
+    EVP_PKEY_free(keys_s);
+
+    EVP_PKEY_free(keys_c);
+
+    delete[] skeyS;
   
-    free(skeyC);
+    delete[] skeyC;
 
 }
