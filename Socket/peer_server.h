@@ -1,11 +1,11 @@
 // Server connection
-
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+#include <string>
 
 // Il server o il peer in vece di server espongono sempre
 // la porta 8888 per permettere la connessione
@@ -24,15 +24,15 @@ class PeerServerConnection {
 
         // Creating socket file descriptor
         if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
-            perror("Error in creating the socket");
-            exit(EXIT_FAILURE);
+            cerr << "Error in creating the socket" << endl;
+            return -1;
         }
 
         // Forcefully attaching socket to the port 8080
         if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
                        &opt, sizeof(opt))) {
-            perror("Error in setting socket options");
-            exit(EXIT_FAILURE);
+            cerr << "Error in setting socket options" << endl;
+            return -1;
         }
         address.sin_family = AF_INET;
         address.sin_addr.s_addr = INADDR_ANY;
@@ -41,29 +41,29 @@ class PeerServerConnection {
         // Forcefully attaching socket to the port 8080
         if (bind(server_fd, (struct sockaddr *)&address,
                  sizeof(address)) < 0) {
-            perror("Bind failed");
-            exit(EXIT_FAILURE);
+            cerr << "Bind failed" << endl;
+            return -1;
         }
 
         if (listen(server_fd, 3) < 0) {
-            perror("Error on the listen");
-            exit(EXIT_FAILURE);
+            cerr << "Error on the listen" << endl;
+            return -1;
         }
 
         if ((new_socket = accept(server_fd, (struct sockaddr *)&address,
                                  (socklen_t *)&addrlen)) < 0) {
-            perror("Error on the accept");
-            exit(EXIT_FAILURE);
+            cerr << "Error on the accept" << endl;
+            return -1;
         }
 
         return 0;
     };
 
-    int send_msg(char const *msg) {
+    int send_msg(string msg) {
         // Invia la risposta
-        if (send(new_socket, msg, strlen(msg), 0) < strlen(msg)) {
-            perror("Sent fewer bytes than expected");
-            exit(EXIT_FAILURE);
+        if (send(new_socket, msg.c_str(), msg.length(), 0) < msg.length()) {
+            cerr << "Sent fewer bytes than expected" << endl;
+            return -1;
         }
         return 0;
     };
@@ -74,8 +74,8 @@ class PeerServerConnection {
         // byte letti (carattere di fine stringa escluso)
         int bytes_read = read(new_socket, buffer, MSG_MAX_LEN);
         if (bytes_read < 0) {
-            perror("Error in message reading");
-            exit(EXIT_FAILURE);
+            cerr << "Error in message reading" << endl;
+            return -1;
         }
         // Manca il carattere di fine stringa
         buffer[bytes_read] = '\0';
@@ -87,5 +87,4 @@ class PeerServerConnection {
         close(server_fd);
         cout << "Connection closed" << endl;
     }
-
 };

@@ -1,9 +1,10 @@
 // Client connection
 #include <arpa/inet.h>
 #include <stdio.h>
-#include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+#include <string>
 
 #define MSG_MAX_LEN 4096
 
@@ -17,7 +18,8 @@ class PeerClientConnection {
         // casuale per il client
 
         if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-            printf("\nSocket creation error \n");
+            cerr << "\nSocket creation error \n"
+                 << endl;
             return -1;
         }
 
@@ -26,22 +28,25 @@ class PeerClientConnection {
 
         // Convert IPv4 and IPv6 addresses from text to binary form
         if (inet_pton(AF_INET, IP_Server, &address.sin_addr) <= 0) {
-            printf("\nInvalid address/ Address not supported \n");
+            cerr << "\nInvalid address/ Address not supported \n"
+                 << endl;
             return -1;
         }
 
         if (connect(sock, (struct sockaddr *)&address, sizeof(address)) < 0) {
-            printf("\nConnection Failed \n");
+            cerr << "\nConnection Failed \n"
+                 << endl;
             return -1;
         }
 
         return 0;
     };
 
-    int send_msg(char const *msg) {
+    int send_msg(string msg) {
         // Invia il messaggio
-        if (send(sock, msg, strlen(msg), 0) < strlen(msg)) {
-            printf("\nSent fewer bytes than expected \n");
+        if (send(sock, msg.c_str(), msg.length(), 0) < msg.length()) {
+            cerr << "\nSent fewer bytes than expected \n"
+                 << endl;
             return -1;
         }
         return 0;
@@ -50,7 +55,8 @@ class PeerClientConnection {
     int send_msg(unsigned char const *msg, unsigned int size) {
         // Invia il messaggio
         if (send(sock, msg, size, 0) < size) {
-            printf("\nSent fewer bytes than expected \n");
+            cerr << "\nSent fewer bytes than expected \n"
+                 << endl;
             return -1;
         }
         return 0;
@@ -62,7 +68,8 @@ class PeerClientConnection {
         // byte letti (carattere di fine stringa escluso)
         int bytes_read = read(sock, buffer, MSG_MAX_LEN);
         if (bytes_read < 0) {
-            printf("\nError in message reading \n");
+            cerr << "\nError in message reading \n"
+                 << endl;
             return -1;
         }
         // Manca il carattere di fine stringa

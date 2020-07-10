@@ -1,13 +1,11 @@
-#include <limits.h>  // for INT_MAX
-#include <openssl/bio.h>
 #include <openssl/err.h>  // for error descriptions
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/x509_vfy.h>
-#include <stdio.h>   // for fopen(), etc.
-#include <string.h>  // for memset()
+#include <stdio.h>
 
 #include <iostream>
+#include <limits>  // for INT_MAX
 #include <string>
 
 using namespace std;
@@ -21,6 +19,7 @@ class CertificateVerifier {
     int ret;
 
     int open_certificate(string certificate_file_name, X509*& cert) {
+        // Apre il certificato passato e setta cert
         FILE* cert_file = fopen(certificate_file_name.c_str(), "r");
         if (!cert_file) {
             cerr << "Error: cannot open file '" << certificate_file_name << "' (missing?)\n";
@@ -37,14 +36,17 @@ class CertificateVerifier {
 
    public:
     int open_ca_certificate_file(string certificate_file_name) {
+        // Apre il certificato della CA
         return open_certificate(certificate_file_name, ca_cert);
     }
 
     int open_server_certificate(string certificate_file_name) {
+        // Apre il certificato del server
         return open_certificate(certificate_file_name, server_cert);
     }
 
     int open_crl(string crl_file_name) {
+        // Apre il CRL
         FILE* crl_file = fopen(crl_file_name.c_str(), "r");
         if (!crl_file) {
             cerr << "Error: cannot open file '" << crl_file_name << "' (missing?)\n";
@@ -60,6 +62,8 @@ class CertificateVerifier {
     }
 
     int build_store() {
+        // Crea lo store con CRL e il certificato della CA
+        // ATTENZIONE: Caricare prima CRL e CA cert
         store = X509_STORE_new();
         if (!store) {
             cerr << "Error: X509_STORE_new returned NULL\n"
@@ -89,7 +93,7 @@ class CertificateVerifier {
 
     int verify_server_certificate() {
         // 1 se il certificato è valido, 0 non valido, -1 errore
-        // Ricordare di chiamare free_all() al termine
+        // ATTENZIONE: caricare prima il certificato e creare lo store
         X509_STORE_CTX* certvfy_ctx = X509_STORE_CTX_new();
         if (!certvfy_ctx) {
             cerr << "Error: X509_STORE_CTX_new returned NULL\n"
@@ -114,7 +118,6 @@ class CertificateVerifier {
 
     int verify_server_certificate(string server_cert_file_name, string ca_cert_file_name, string crl_file_name) {
         // 1 se il certificato è valido, 0 non valido, -1 errore
-        // Ricordare di chiamare free_all() al termine
         if (open_ca_certificate_file(ca_cert_file_name) != 0) {
             return -1;
         }
@@ -131,17 +134,15 @@ class CertificateVerifier {
     }
 
     const char* get_server_name() {
-        // free() it after reading
         return X509_NAME_oneline(X509_get_subject_name(server_cert), NULL, 0);
     }
 
     const char* get_ca_name() {
-        // free() it after reading
         return X509_NAME_oneline(X509_get_issuer_name(server_cert), NULL, 0);
     }
 
     int verify_signed_file(const unsigned char* sgnt_buf, unsigned int sgnt_size, const unsigned char* clear_text_buffer, unsigned clear_size, string server_cert_file_name) {
-        // It is 0 if invalid signature, -1 if some other error, 1 if success.
+        // 1 se il certificato è valido, 0 non valido, -1 errore
         // Inserire NULL al path del certificato se già caricato in precedenza
 
         // Apre il certificato se non presente

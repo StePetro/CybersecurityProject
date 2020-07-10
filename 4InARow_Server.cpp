@@ -45,7 +45,7 @@ int cert_handler(int socket) {
     rewind(cert_file);
 
     // Alloca una buffer per salvare il certificato in memoria
-    unsigned char *certificate_buff = (unsigned char *)malloc(cert_file_size);
+    unsigned char *certificate_buff = new unsigned char[cert_file_size];
 
     // Scrive il certificato nel buffer
     if (fread(certificate_buff, 1, cert_file_size, cert_file) < cert_file_size) {
@@ -63,7 +63,7 @@ int cert_handler(int socket) {
     }
 
     // Dealloca la memoria del buffer
-    free(certificate_buff);
+    delete[] certificate_buff;
     return 0;
 }
 
@@ -75,6 +75,15 @@ int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, cha
     if (users[username].empty()) {
         // Se non è nel json risponde Not Found
         string message = "NF";
+        if (send(socket, message.c_str(), message.length(), 0) != message.length()) {
+            perror("Error in sending the message");
+        }
+        return -1;
+    }
+
+    if (!users[username]["nonce"].empty()) {
+        // L'utente è già online
+        string message = "AL";
         if (send(socket, message.c_str(), message.length(), 0) != message.length()) {
             perror("Error in sending the message");
         }
@@ -104,7 +113,7 @@ int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, cha
 
     // Creo casualmente nonces del server
     RAND_poll();
-    unsigned char *nonce_sc = (unsigned char *)malloc(NONCE_SIZE * 2);  // Alloco per due nonce in modo da giustapporli
+    unsigned char *nonce_sc = new unsigned char[NONCE_SIZE * 2];  // Alloco per due nonce in modo da giustapporli
     RAND_bytes((unsigned char *)&nonce_sc[0], NONCE_SIZE);
 
     // Giustappongo i nonce (nonces||noncec)
@@ -128,7 +137,7 @@ int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, cha
         return -1;
     }
 
-    free(signed_buff);
+    delete[] signed_buff;
 
     // Il client risponde con la firma del nonce del server: sig(nonces)
     if ((bytes_read = read(socket, buffer, MSG_MAX_LEN)) == 0) {
@@ -147,12 +156,15 @@ int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, cha
     // Verifica se la firma sig(nonces) è valida, tramite la chiave pubblica dell'utente che si sta loggando
     if (verify_sign(users[username]["pub_key"].asString(), nonce_sc, NONCE_SIZE, (unsigned char *)buffer, bytes_read) == 0) {
         string message = "ACK";  // Se era giusta
+        if (send(socket, message.c_str(), message.length(), 0) != message.length()) {
+            perror("Error in sending the message");
+            return -1;
+        }
     } else {
         string message = "NV";  // Se non era valida
-    }
-
-    if (send(socket, message.c_str(), message.length(), 0) != message.length()) {
-        perror("Error in sending the message");
+        if (send(socket, message.c_str(), message.length(), 0) != message.length()) {
+            perror("Error in sending the message");
+        }
         return -1;
     }
 
@@ -166,18 +178,16 @@ int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, cha
     users[username]["PORT"] = ntohs(address.sin_port);
 
     // Salva il nonce trasformandolo in unsigned int per poterlo manipoare facilmente
-    unsigned int *nonce_s_pointer = (unsigned int *)malloc(NONCE_SIZE + 1);
+    unsigned int *nonce_s_pointer = new unsigned int;
     memcpy(nonce_s_pointer, nonce_sc, NONCE_SIZE);
     unsigned int nonce_s = *nonce_s_pointer;
     users[username]["nonce"] = nonce_s;
-    free(nonce_s_pointer);
-    free(nonce_sc);
+    delete nonce_s_pointer;
+    delete[] nonce_sc;
 
     // Aggiungo anche l'informazione su quale user sta usando un certo slot dei socket
     socket_slots[i] = username;
 
-    cout << users << endl;
-    cout << socket_slots << endl;
     return 0;
 }
 
@@ -313,6 +323,9 @@ int main(int argc, char *argv[]) {
             if (FD_ISSET(sd, &readfds)) {
                 //Check if it was for closing , and also read the
                 //incoming message
+
+                //SECONDA CONNESSIONE IN POI-----------------------------------------------------------------------------------------------
+
                 if ((bytes_read = read(sd, buffer, MSG_MAX_LEN)) == 0) {
                     //Somebody disconnected , get his details and print
                     getpeername(sd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
@@ -322,16 +335,15 @@ int main(int argc, char *argv[]) {
                     //Close the socket and mark as 0 in list for reuse
                     close(sd);
                     client_socket[i] = 0;
-                    //Toglie l'utente disconnesso dalla lista
-                    socket_slots[i] = {};
-                }
-
-                //Response from the server
-                else {
-                    //SECONDA CONNESSIONE IN POI-----------------------------------------------------------------------------------------------
-
+                    if (!socket_slots[i].empty()) {
+                        //Toglie l'utente disconnesso dalla lista
+                        users[socket_slots[i].asString()]["IP"] = {};
+                        users[socket_slots[i].asString()]["PORT"] = {};
+                        users[socket_slots[i].asString()]["nonce"] = {};
+                        socket_slots[i] = {};
+                    }
+                } else {                        // Risposta del server
                     buffer[bytes_read] = '\0';  // ATTENZIONE: Aggiunge il carattere di fine stringa
-
                     string tmp;
 
                     // COMANDO /cert

@@ -1,16 +1,17 @@
-#include <limits.h>  // for INT_MAX
-#include <openssl/bio.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
-#include <stdio.h>   // for fopen(), etc.
-#include <string.h>  // for memset()
+#include <stdio.h>  // for fopen(), etc.
 
 #include <iostream>
+#include <limits>  // for INT_MAX
 #include <string>
 
 using namespace std;
 
 int sign(string prvkey_file_name, unsigned char* clear_buf, unsigned int clear_size, unsigned char*& sgnt_buf, unsigned int& sgnt_size) {
+    // Restituisce 0 se ha successo, -1 altrimenti
+    // ATTENZIONE: ricordarsi di deallocare sgnt_buf con "delete[]" 
+    
     int ret;  // used for return values
 
     // load my private key:
@@ -37,11 +38,7 @@ int sign(string prvkey_file_name, unsigned char* clear_buf, unsigned int clear_s
     }
 
     // allocate buffer for signature:
-    sgnt_buf = (unsigned char*)malloc(EVP_PKEY_size(prvkey));
-    if (!sgnt_buf) {
-        cerr << "Error: malloc returned NULL (signature too big?)\n";
-        return -1;
-    }
+    sgnt_buf = new unsigned char[EVP_PKEY_size(prvkey)];
 
     // sign the plaintext:
     // (perform a single update on the whole plaintext,

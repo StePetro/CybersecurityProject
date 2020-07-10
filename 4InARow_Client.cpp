@@ -1,6 +1,7 @@
 #include <openssl/bio.h>
 #include <openssl/rand.h>
 
+#include <cstring>
 #include <iostream>
 
 #include "Certificate/certificate_verifier.h"
@@ -59,7 +60,7 @@ int cert_handler(unsigned char *msg_buffer, PeerClientConnection &cc) {
     return 0;
 }
 
-int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned int&nonce) {
+int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned int &nonce) {
     long bytes_read = 0;
 
     // Lettura risposta server alla /login:[nome_utente]
@@ -75,19 +76,25 @@ int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned 
         return -1;
     }
 
+    // Utente non trovato
+    tmp = "AL";
+    if (strncmp((const char *)msg_buffer, tmp.c_str(), tmp.length()) == 0) {
+        cout << "User already logged" << endl;
+        return -1;
+    }
+
     // Utente valido
     tmp = "ACK";
     if (strncmp((const char *)msg_buffer, tmp.c_str(), tmp.length()) == 0) {
-
         cout << "Authenticating..." << endl;
 
         // Generazione nonce client casuale
         RAND_poll();
-        unsigned char *nonce_sc = (unsigned char *)malloc(NONCE_SIZE * 2); // Preparo lo spazio per 2 nonce giustapposti
+        unsigned char *nonce_sc = new unsigned char[NONCE_SIZE * 2];  // Preparo lo spazio per 2 nonce giustapposti
         RAND_bytes((unsigned char *)&nonce_sc[NONCE_SIZE], NONCE_SIZE);
 
         // Mando solo nonce_client
-        if(cc.send_msg(nonce_sc + NONCE_SIZE, NONCE_SIZE) !=0){
+        if (cc.send_msg(nonce_sc + NONCE_SIZE, NONCE_SIZE) != 0) {
             return -1;
         }
 
@@ -122,7 +129,7 @@ int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned 
         }
 
         // Invio sig(nonces)
-        if(cc.send_msg(signed_msg, signed_msg_size) != 0){
+        if (cc.send_msg(signed_msg, signed_msg_size) != 0) {
             return -1;
         }
 
@@ -143,14 +150,14 @@ int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned 
         tmp = "ACK";
         if (strncmp((const char *)msg_buffer, tmp.c_str(), tmp.length()) == 0) {
             // Salvo il nonce e svuoto la memoria
-            free(signed_msg);
+            delete[] signed_msg;
             cout << "Login completed successfully" << endl;
-            unsigned int* nonce_pointer = (unsigned int *)malloc(NONCE_SIZE);
+            unsigned int *nonce_pointer = new unsigned int;
             memcpy(nonce_pointer, nonce_sc, NONCE_SIZE);
             nonce = *nonce_pointer;
             cout << "The nonce is: " << nonce << endl;
-            free(nonce_sc);
-            free(nonce_pointer);
+            delete[] nonce_sc;
+            delete nonce_pointer;
             return 0;
         }
     }
@@ -184,7 +191,7 @@ main(int argc, char const *argv[]) {
             cout << "Thanks for playing, goodbye!" << endl;
             break;
         }
-        cc.send_msg(msg.c_str());
+        cc.send_msg(msg);
 
         // Gestione richiesta certificato
         if (msg.compare(0, string("/login:").size(), "/login:") == 0) {
