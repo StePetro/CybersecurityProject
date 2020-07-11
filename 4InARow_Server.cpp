@@ -15,6 +15,7 @@
 #include <fstream>
 #include <iostream>
 
+#include "Authenticated_Encription/gcm.h"
 #include "Key_Exchange/DHKE.h"
 #include "Nonce/nonce_operations.h"
 #include "Signature/signer.h"
@@ -30,6 +31,7 @@ using namespace std;
 #define CERTIFICATE_PATH "PEM/server_certificate.pem"
 #define PRKEY_PATH "PEM/server_private_key.pem"
 #define NONCE_SIZE 16  // 128 bit
+#define SESSION_KEY_SIZE 256 
 
 int cert_handler(int socket) {
     // Apre il file del certificato
@@ -69,7 +71,7 @@ int cert_handler(int socket) {
     return 0;
 }
 
-int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, char *buffer, sockaddr_in address, int addrlen, int *client_socket, int i, unsigned char** nonce_list, unsigned char** session_key_list) {
+int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, char *buffer, sockaddr_in address, int addrlen, int *client_socket, int i, unsigned char **session_key_list) {
     int bytes_read;
     string username = string(buffer);
     // Nome utente
@@ -124,7 +126,7 @@ int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, cha
 
     // Firma digitale di nonce_c (nel buffer) con la chiave privata del server
     unsigned char *signed_buff;
-    unsigned int signed_len = 0;
+    uint32_t signed_len = 0;
     if (sign(PRKEY_PATH, (unsigned char *)nonce_c, NONCE_SIZE, signed_buff, signed_len) != 0) {
         cerr << "Not able to sign" << endl;
         return -1;
@@ -195,25 +197,23 @@ int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, cha
     nonce_add_one(nonce_c);
 
     // ( _____ || nonce_c || pubk_s)
-    memcpy(buffer + sizeof(unsigned int), nonce_c, NONCE_SIZE);
-    memcpy(buffer + sizeof(unsigned int) + NONCE_SIZE, public_key_server_buf, public_key_server_buf_size);
+    memcpy(buffer + sizeof(uint32_t), nonce_c, NONCE_SIZE);
+    memcpy(buffer + sizeof(uint32_t) + NONCE_SIZE, public_key_server_buf, public_key_server_buf_size);
 
     // Firma digitale di (nonce_c || pubk_s) (nel buffer)
     signed_len = 0;
-    if (sign(PRKEY_PATH, (unsigned char *)buffer + sizeof(unsigned int), NONCE_SIZE + public_key_server_buf_size, signed_buff, signed_len) != 0) {
+    if (sign(PRKEY_PATH, (unsigned char *)buffer + sizeof(uint32_t), NONCE_SIZE + public_key_server_buf_size, signed_buff, signed_len) != 0) {
         cerr << "Not able to sign" << endl;
         return -1;
     }
 
     // ( sgn_len || nonce_c || pubk_s)
     cout << signed_len << endl;
-    memcpy(buffer, &signed_len, sizeof(unsigned int));
+    memcpy(buffer, &signed_len, sizeof(uint32_t));
 
     // Invio messaggio = (sgn_len || nonce_c || pubk_s || sgn(nonce_c || pubk_s))
-    memcpy(buffer + sizeof(unsigned int) + NONCE_SIZE + public_key_server_buf_size, signed_buff, signed_len);
-    BIO_dump_fp(stdout, (const char *)buffer, sizeof(unsigned int) + NONCE_SIZE + public_key_server_buf_size + signed_len);
-    BIO_dump_fp(stdout, (const char *)nonce_c, NONCE_SIZE);
-    if (send(socket, buffer, sizeof(unsigned int) + NONCE_SIZE + public_key_server_buf_size + signed_len, 0) != sizeof(unsigned int) + NONCE_SIZE + public_key_server_buf_size + signed_len) {
+    memcpy(buffer + sizeof(uint32_t) + NONCE_SIZE + public_key_server_buf_size, signed_buff, signed_len);
+    if (send(socket, buffer, sizeof(uint32_t) + NONCE_SIZE + public_key_server_buf_size + signed_len, 0) != sizeof(uint32_t) + NONCE_SIZE + public_key_server_buf_size + signed_len) {
         cerr << "Error in sending the message" << endl;
         return -1;
     }
@@ -232,28 +232,26 @@ int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, cha
         return -1;
     }
 
-    BIO_dump_fp(stdout, (const char *)buffer, bytes_read);
-    BIO_dump_fp(stdout, (const char *)nonce_s, NONCE_SIZE);
     // Se il nonce è sbagliato chiude la connessione
-    if (memcmp(buffer + sizeof(unsigned int), nonce_s, NONCE_SIZE) != 0) {
+    if (memcmp(buffer + sizeof(uint32_t), nonce_s, NONCE_SIZE) != 0) {
         cerr << "Wrong nonce" << endl;
         return -1;
     }
 
     // Prelevo la dimensione della firma
-    unsigned int SGN_SIZE = 0;
-    memcpy(&SGN_SIZE, buffer, sizeof(unsigned int));
+    uint32_t SGN_SIZE = 0;
+    memcpy(&SGN_SIZE, buffer, sizeof(uint32_t));
     cout << SGN_SIZE << endl;
 
     // Controlla la firma, chiude la connessione se sbagliata, buff = (sgn_len || nonce_s || pubk_c || sgn(nonce_s || pubk_c))
-    if (verify_sign(users[username]["pub_key"].asString(), (unsigned char *)buffer + sizeof(unsigned int), bytes_read - SGN_SIZE - sizeof(unsigned int), (unsigned char *)buffer + bytes_read - SGN_SIZE, SGN_SIZE) != 0) {
+    if (verify_sign(users[username]["pub_key"].asString(), (unsigned char *)buffer + sizeof(uint32_t), bytes_read - SGN_SIZE - sizeof(uint32_t), (unsigned char *)buffer + bytes_read - SGN_SIZE, SGN_SIZE) != 0) {
         cerr << "Wrong signature" << endl;
         return -1;
     }
 
     // Deserializza la chiave pubblica effimera del client, buff = (sgn_len || nonce_s || pubk_c || sgn(nonce_s || pubk_c))
     EVP_PKEY *pub_key_client = NULL;
-    if (deserialize_pub_key((unsigned char *)buffer + NONCE_SIZE + sizeof(unsigned int), bytes_read - SGN_SIZE - NONCE_SIZE - sizeof(unsigned int), pub_key_client) != 0) {
+    if (deserialize_pub_key((unsigned char *)buffer + NONCE_SIZE + sizeof(uint32_t), bytes_read - SGN_SIZE - NONCE_SIZE - sizeof(uint32_t), pub_key_client) != 0) {
         cerr << "Key deserialization failed" << endl;
         return -1;
     }
@@ -269,9 +267,8 @@ int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, cha
     getpeername(socket, (struct sockaddr *)&address, (socklen_t *)&addrlen);
     users[username]["IP"] = inet_ntoa(address.sin_addr);
     users[username]["PORT"] = ntohs(address.sin_port);
-    // Parte da 0 con il nonce e lo incrementa da ora in poi
-    nonce_list[i] = 0;
-    session_key_list[i] = 0;
+
+    session_key_list[i] = session_key;
     cout << users << endl;
     // Aggiungo anche l'informazione su quale user sta usando un certo slot dei socket
     socket_slots[i] = username;
@@ -440,6 +437,28 @@ int main(int argc, char *argv[]) {
                 } else {                        // Risposta del server
                     buffer[bytes_read] = '\0';  // ATTENZIONE: Aggiunge il carattere di fine stringa
                     string tmp;
+                    unsigned char *decrypted_msg;
+                    unsigned int decrypted_msg_len;
+
+                    // Incremento il nonce di 1 se user loggato
+                    if (!socket_slots[i].empty()) {
+                        nonce_add_one(nonce_list[i]);
+                    
+                        // Se il nonce è sbagliato chiude la connessione
+                        if (memcmp(buffer + IV_LEN, nonce_list[i], NONCE_SIZE) != 0) {
+                            cerr << "Wrong nonce" << endl;
+                            close(sd);
+                            client_socket[i] = 0;
+                            //Toglie l'utente disconnesso dalla lista
+                            users[socket_slots[i].asString()]["IP"] = {};
+                            users[socket_slots[i].asString()]["PORT"] = {};
+                            socket_slots[i] = {};
+                            nonce_list[i] = 0;
+                            session_key_list[i] = 0;
+                            continue;
+                        }
+                        gcm_decrypt((unsigned char *)buffer, bytes_read, NONCE_SIZE, session_key_list[i], decrypted_msg, decrypted_msg_len);
+                    }
 
                     // COMANDO /cert
                     if (strncmp((const char *)buffer, "/cert", bytes_read) == 0) {
@@ -451,7 +470,10 @@ int main(int argc, char *argv[]) {
                     // COMANDO /login
                     tmp = "/login:";
                     if (tmp.length() < bytes_read && strncmp((const char *)buffer, tmp.c_str(), tmp.length()) == 0) {
-                        if (login_handler(sd, users, socket_slots, buffer, address, addrlen, client_socket, i, nonce_list, session_key_list) == 0) {
+                        if (login_handler(sd, users, socket_slots, buffer, address, addrlen, client_socket, i, session_key_list) == 0) {
+                            // Parte da 0 con il nonce e lo incrementa da ora in poi
+                            unsigned char zeros[NONCE_SIZE] = {0};
+                            nonce_list[i] = zeros;
                             continue;
                         }
                         // Se il login fallisce
@@ -469,17 +491,26 @@ int main(int argc, char *argv[]) {
                     // Comandi disponibili solo agli utenti loggati
                     if (!socket_slots[i].empty()) {
                         // COMANDO /list
-                        if (strncmp((const char *)buffer, "/list", bytes_read) == 0) {
+                        if (strncmp((const char *)decrypted_msg, "/list", decrypted_msg_len) == 0) {
                             // Elenca solo gli utenti online e loggati
-                            string message = "Online users:";
+                            string message = "Users ready:";
                             for (i = 0; i < MAX_CLIENTS; i++) {
-                                if (!socket_slots[i].empty())
+                                // RIMETTERE A TRUE
+                                if (!socket_slots[i].empty() && !users[socket_slots[i].asString()]["READY"].asBool()) {
                                     message += "\n- ";
-                                message += socket_slots[i].asString();
+                                    message += socket_slots[i].asString();
+                                }
                             }
                             message += "\nIf you want to challenge someone type: \"/challenge:[user]\"";
-                            if (send(sd, message.c_str(), message.length(), 0) != message.length()) {
-                                perror("Error in sending the message");
+                            unsigned char *final_msg;
+                            unsigned int final_msg_len;
+                            nonce_add_one(nonce_list[i]);
+                            if (gcm_encrypt((unsigned char *)message.c_str(), message.length(), nonce_list[i], NONCE_SIZE, session_key_list[i], final_msg, final_msg_len) != 0) {
+                                cerr << "Error in encrypting the message" << endl;
+                                string message = "ERR";
+                                if (send(sd, final_msg, final_msg_len, 0) != final_msg_len) {
+                                    perror("Error in sending the message");
+                                }
                             }
                             continue;
                         }
@@ -515,6 +546,9 @@ int main(int argc, char *argv[]) {
                     if (send(sd, message.c_str(), message.length(), 0) != message.length()) {
                         perror("Error in sending the message");
                     }
+
+                    delete[] decrypted_msg;
+                    decrypted_msg_len = 0;
 
                     //FINE SECONDA CONNESSIONE IN POI-----------------------------------------------------------------------------------------------
                 }

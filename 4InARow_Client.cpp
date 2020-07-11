@@ -4,6 +4,7 @@
 #include <cstring>
 #include <iostream>
 
+#include "Authenticated_Encription/gcm.h"
 #include "Certificate/certificate_verifier.h"
 #include "Key_Exchange/DHKE.h"
 #include "Nonce/nonce_operations.h"
@@ -63,7 +64,7 @@ int cert_handler(unsigned char *msg_buffer, PeerClientConnection &cc) {
     return 0;
 }
 
-int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned char*& session_key_server) {
+int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned char *&session_key_server) {
     long bytes_read = 0;
 
     // Lettura risposta server alla /login:[nome_utente]
@@ -122,7 +123,7 @@ int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned 
 
         // Preparazione firma nonce_server
         unsigned char *signed_msg;
-        unsigned int signed_msg_size = 0;
+        uint32_t signed_msg_size = 0;
 
         // Firma: sig(nonce_s)
         if (sign(PRIVATE_KEY_PATH, nonce_s, NONCE_SIZE, signed_msg, signed_msg_size) != 0) {
@@ -179,28 +180,26 @@ int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned 
                 return -1;
             }
 
-            BIO_dump_fp(stdout, (const char *)msg_buffer, bytes_read);
-            BIO_dump_fp(stdout, (const char *)nonce_c, NONCE_SIZE);
             // Se il nonce è sbagliato chiude la connessione
-            if (memcmp(msg_buffer + sizeof(unsigned int), nonce_c, NONCE_SIZE) != 0) {
+            if (memcmp(msg_buffer + sizeof(uint32_t), nonce_c, NONCE_SIZE) != 0) {
                 cerr << "Wrong nonce" << endl;
                 return -1;
             }
 
             // Prelevo la dimensione della firma
-            unsigned int SGN_SIZE = 0;
-            memcpy(&SGN_SIZE, msg_buffer, sizeof(unsigned int));
+            uint32_t SGN_SIZE = 0;
+            memcpy(&SGN_SIZE, msg_buffer, sizeof(uint32_t));
             cout << SGN_SIZE << endl;
 
             // Controlla la firma, chiude la connessione se sbagliata buffer = (sgn_len || nonce_c || pubk_s || sgn(nonce_c || pubk_s))
-            if (cv.verify_signed_file(msg_buffer + bytes_read - SGN_SIZE, SGN_SIZE, msg_buffer + sizeof(unsigned int), bytes_read - SGN_SIZE - +sizeof(unsigned int), CERT_SAVE_PATH) != 1) {
+            if (cv.verify_signed_file(msg_buffer + bytes_read - SGN_SIZE, SGN_SIZE, msg_buffer + sizeof(uint32_t), bytes_read - SGN_SIZE - +sizeof(uint32_t), CERT_SAVE_PATH) != 1) {
                 cerr << "Wrong signature" << endl;
                 return -1;
             }
 
             // Deserializza la chiave pubblica effimera del client
             EVP_PKEY *pub_key_server = NULL;
-            if (deserialize_pub_key((unsigned char *)msg_buffer + NONCE_SIZE + sizeof(unsigned int), bytes_read - SGN_SIZE - NONCE_SIZE - sizeof(unsigned int), pub_key_server) != 0) {
+            if (deserialize_pub_key((unsigned char *)msg_buffer + NONCE_SIZE + sizeof(uint32_t), bytes_read - SGN_SIZE - NONCE_SIZE - sizeof(uint32_t), pub_key_server) != 0) {
                 cerr << "Key deserialization failed" << endl;
                 return -1;
             }
@@ -212,25 +211,25 @@ int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned 
             }
 
             // ( _____ || nonce_s || pubk_c)
-            memcpy(msg_buffer + sizeof(unsigned int), nonce_s, NONCE_SIZE);
-            memcpy(msg_buffer + sizeof(unsigned int) + NONCE_SIZE, public_key_client_buf, public_key_client_buf_size);
+            memcpy(msg_buffer + sizeof(uint32_t), nonce_s, NONCE_SIZE);
+            memcpy(msg_buffer + sizeof(uint32_t) + NONCE_SIZE, public_key_client_buf, public_key_client_buf_size);
 
             // Firma digitale di (nonce_s || pubk_c) (nel buffer)
             signed_msg_size = 0;
-            if (sign(PRIVATE_KEY_PATH, (unsigned char *)msg_buffer + sizeof(unsigned int), NONCE_SIZE + public_key_client_buf_size, signed_msg, signed_msg_size) != 0) {
+            if (sign(PRIVATE_KEY_PATH, (unsigned char *)msg_buffer + sizeof(uint32_t), NONCE_SIZE + public_key_client_buf_size, signed_msg, signed_msg_size) != 0) {
                 cerr << "Not able to sign" << endl;
                 return -1;
             }
 
             // ( sgn_len || nonce_s || pubk_c)
             cout << signed_msg_size << endl;
-            memcpy(msg_buffer, &signed_msg_size, sizeof(unsigned int));
+            memcpy(msg_buffer, &signed_msg_size, sizeof(uint32_t));
 
             // Invio messaggio = (sgn_len || nonce_s || pubk_c || sgn(nonce_s || pubk_c))
-            memcpy(msg_buffer + sizeof(unsigned int) + NONCE_SIZE + public_key_client_buf_size, signed_msg, signed_msg_size);
-            BIO_dump_fp(stdout, (const char *)msg_buffer, sizeof(unsigned int) + NONCE_SIZE + public_key_client_buf_size + signed_msg_size);
+            memcpy(msg_buffer + sizeof(uint32_t) + NONCE_SIZE + public_key_client_buf_size, signed_msg, signed_msg_size);
+            BIO_dump_fp(stdout, (const char *)msg_buffer, sizeof(uint32_t) + NONCE_SIZE + public_key_client_buf_size + signed_msg_size);
             BIO_dump_fp(stdout, (const char *)nonce_c, NONCE_SIZE);
-            if (cc.send_msg(msg_buffer, sizeof(unsigned int) + NONCE_SIZE + public_key_client_buf_size + signed_msg_size) != 0) {
+            if (cc.send_msg(msg_buffer, sizeof(uint32_t) + NONCE_SIZE + public_key_client_buf_size + signed_msg_size) != 0) {
                 cerr << "Error in sending the message" << endl;
                 return -1;
             }
@@ -249,9 +248,9 @@ int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned 
 
 main(int argc, char const *argv[]) {
     // Strutture dati utili
-    unsigned char msg_buffer[MSG_MAX_LEN] = {0};
+    char msg_buffer[MSG_MAX_LEN] = {0};
     long bytes_read = 0;
-    unsigned char* session_key_server = NULL;
+    unsigned char *session_key_server = NULL;
     unsigned char nonce_server[NONCE_SIZE] = {0};
 
     // Socket client
@@ -259,19 +258,16 @@ main(int argc, char const *argv[]) {
     cc.initialization(IP_SERVER, SERVER_PORT);
 
     // Lettura messaggio benvenuto
-    if ((bytes_read = cc.read_msg(msg_buffer)) == 0) {
+    if ((bytes_read = cc.read_msg((unsigned char *)msg_buffer)) == 0) {
         cout << "Server disconnected" << endl;
         exit(1);
     }
     printf("%s\n", msg_buffer);
 
     while (true) {
-
-        // Incremento il nonce di 1
-        if(session_key_server != NULL){
+        if (session_key_server != NULL) {
             nonce_add_one(nonce_server);
         }
-
         // Scrittura verso server
         string msg;
         cout << "\nPlease type a command: ";
@@ -281,11 +277,21 @@ main(int argc, char const *argv[]) {
             cout << "Thanks for playing, goodbye!" << endl;
             break;
         }
-        cc.send_msg(msg);
+
+        if (session_key_server != NULL) {
+            // Comandi da loggato
+            unsigned char *final_msg;
+            unsigned int final_msg_len;
+            gcm_encrypt((unsigned char *)msg.c_str(), msg.length(), nonce_server, NONCE_SIZE, session_key_server, final_msg, final_msg_len);
+            cc.send_msg(final_msg, final_msg_len);
+        } else {
+            // Comandi da NON loggato
+            cc.send_msg(msg);
+        }
 
         // Gestione richiesta certificato
         if (msg.compare(0, string("/login:").size(), "/login:") == 0 && session_key_server == NULL) {
-            if (login_handler(msg_buffer, cc, session_key_server) != 0) {
+            if (login_handler((unsigned char *)msg_buffer, cc, session_key_server) != 0) {
                 cerr << "Login failed" << endl;
                 break;
             }
@@ -294,18 +300,37 @@ main(int argc, char const *argv[]) {
 
         // Gestione richiesta certificato
         if (msg.compare("/cert") == 0) {
-            if (cert_handler(msg_buffer, cc) != 0) {
+            if (cert_handler((unsigned char *)msg_buffer, cc) != 0) {
                 cerr << "Certificate NOT verified" << endl;
             }
             continue;
         }
 
         // Lettura risposta server di default
-        if ((bytes_read = cc.read_msg(msg_buffer)) == 0) {
+        if ((bytes_read = cc.read_msg((unsigned char *)msg_buffer)) == 0) {
             cerr << "Server disconnected" << endl;
             exit(-1);
         }
-        printf("%s\n", msg_buffer);
+
+        // Incremento il nonce di 1
+        if (session_key_server != NULL) {
+            unsigned char *decrypted_msg;
+            unsigned int decrypted_msg_len;
+            gcm_decrypt((unsigned char *)msg_buffer, bytes_read, NONCE_SIZE, session_key_server, decrypted_msg, decrypted_msg_len);
+
+            // Se il nonce è sbagliato chiude la connessione
+            if (memcmp(msg_buffer + IV_LEN, nonce_server, NONCE_SIZE) != 0) {
+                cerr << "Wrong nonce, aborting connection" << endl;
+                break;
+            }
+
+            memcpy(msg_buffer, decrypted_msg, decrypted_msg_len);
+            msg_buffer[decrypted_msg_len] = '\0';
+            cout << msg_buffer << endl;
+            nonce_add_one(nonce_server);
+        } else {
+            cout << msg_buffer << endl;
+        }
     }
     return 0;
 }

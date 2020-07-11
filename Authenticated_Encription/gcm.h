@@ -97,7 +97,7 @@ int gcm_encrypt(unsigned char *plaintext, unsigned int plaintext_len,
 int gcm_decrypt(unsigned char *msg_buffer, unsigned int msg_len,
                 int aad_len,
                 unsigned char *key,
-                unsigned char *&plaintext) {
+                unsigned char *&plaintext, unsigned int& decrypted_msg_len) {
     // Restituisce 0 e setta plaintex e plaintext_len al successo, -1 altrimenti
     // ATTENZIONE: ricordare di fare la "delete []" per plaintext
     // Plaintext 
@@ -151,6 +151,7 @@ int gcm_decrypt(unsigned char *msg_buffer, unsigned int msg_len,
 
     if (ret > 0) {
         /* Success */
+        decrypted_msg_len = msg_len - TAG_LEN - IV_LEN - aad_len;
         return 0;
     } else {
         /* Verify failed */
