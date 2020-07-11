@@ -515,6 +515,47 @@ int main(int argc, char *argv[]) {
                             continue;
                         }
 
+                        // COMANDO /find_challenger
+                        if(strncmp((const char*)buffer, "/find_challenger", bytes_read) == 0){
+                            
+                            cout << "Ho ricevuto il comando find_challenge" << endl;
+
+                            users[socket_slots[i].asString()]["READY"] = true;
+
+                            
+                            /*
+                            string message = "/challenge:Bob";
+                            if (send(sd, message.c_str(), message.length(), 0) != message.length()) {
+                                perror("Error in sending the message");
+                            }
+                            unsigned char* response = new unsigned char[MSG_MAX_LEN];
+                            if((bytes_read = read(sd, response, MSG_MAX_LEN)) == 0){
+                                perror("Error in reciving the message");
+                            }
+
+                            cout << "La risposta è stata: " << response << endl;
+
+                            if(strncmp("y",(const char*) response, bytes_read) == 0){
+
+                                cout << "Devo mandare la roba dello sfidante" << endl;
+
+                                    // load the peer's public key:
+                                FILE* pubkey_file = fopen(users["Alice"]["pub_key"].asString().c_str(), "r");
+                                if (!pubkey_file) {
+                                    cerr << "Error: cannot open file '" << users["Alice"]["pub_key"].asString() << "' (missing?)\n";
+                                    return -1;
+                                }
+
+                                unsigned char * ip_challenger = users["Alice"]["IP"];
+                            
+                                size_t size_ip = 
+
+                                message = "172.16.1.242";
+                            }
+                            */
+                            continue;
+                        }
+
                         /*
 
                         // COMANDO /challenge

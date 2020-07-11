@@ -246,6 +246,89 @@ int login_handler(unsigned char *msg_buffer, PeerClientConnection &cc, unsigned 
     return -1;
 }
 
+
+// DA FINIRE E TESTARE
+int find_challenger_handler(unsigned char* msg_buffer, PeerClientConnection &cc){
+    // gestisce la ricerca di uno sfidante
+    
+    long bytes_read = 0;
+    unsigned char* challenger;
+
+    // Lettura lunghezza certificato + certificato
+    if ((bytes_read = cc.read_msg(msg_buffer)) == 0) {
+        cout << "Server disconnected" << endl;
+        exit(1);
+    }
+    // messaggio da decryptare
+    
+    string base_msg = "/challenge:";
+    size_t len_base_msg = base_msg.length();
+    if (strncmp((const char *)msg_buffer, base_msg.c_str(), len_base_msg) == 0) {
+
+        //strncpy(dest, src + beginIndex, endIndex - beginIndex);
+        //strncpy((char*)challenger, (char*)(msg_buffer + len_base_msg), bytes_read - len_base_msg);
+
+        //cout << "I'm being challenged by " << challenger << endl;
+
+        cout << "I have received: " << msg_buffer << endl;
+        string response;
+        cout << "\nDo you accept the challenge? (y/n)" << endl;
+        while(true){
+            cin >> response;
+            if(response.compare("y") == 0 || response.compare("n") == 0){ // a valid response has been given
+                break;
+            }
+            cout << "Please type a valid command. (y/n)" << endl;
+            response.empty();
+        }
+        
+        if(response.compare("y") == 0){
+            // send the response
+            cc.send_msg(response.c_str());
+
+            
+            // wait for data of the challenger
+            if ((bytes_read = cc.read_msg(msg_buffer)) == 0) {
+            cout << "Server disconnected" << endl;
+            exit(1);
+            }
+            
+            cout << "I have received: " << msg_buffer << endl;
+            
+            /*
+            // COME FACCIO A SAPERE LA LUNGHEZZA DELL'IP?
+            size_t len_ip;
+
+            // ALLOCARE STRINGA IP E BUFFER PER PEM
+            unsigned char* IP_challenger;
+            unsigned char* PEM_pubkey_challenger;
+            EVP_PKEY* pubkey_challenger;
+
+            // ASSEGNO A OGNUNA DI ESSE LA GIUSTA PARTE DI msg_buffer
+            //deserializzo il pem
+            deserialize_pub_key(PEM_pubkey_challenger, bytes_read - len_ip, pubkey_challenger);
+
+            //mi connetto allo sfidante 
+            */
+        }
+        else {
+
+            cc.send_msg(response.c_str());
+            cout << "Ho rifiutato!" << endl;
+        }
+    // if the response is no the user goes back in the main loop
+
+    }
+
+}
+
+// DA FARE
+int challenge_handler(){}
+
+// DA FARE
+int list_handler(){}
+
+
 main(int argc, char const *argv[]) {
     // Strutture dati utili
     char msg_buffer[MSG_MAX_LEN] = {0};
@@ -303,6 +386,14 @@ main(int argc, char const *argv[]) {
             if (cert_handler((unsigned char *)msg_buffer, cc) != 0) {
                 cerr << "Certificate NOT verified" << endl;
             }
+            continue;
+        }
+
+        // Gestione richiesta di cercare uno sfidante
+        if(msg.compare("/find_challenger") == 0){
+            cout << "I'm looking for a challenger" << endl;
+            find_challenger_handler((unsigned char*) msg_buffer, cc);
+
             continue;
         }
 
