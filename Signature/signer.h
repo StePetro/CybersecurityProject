@@ -59,6 +59,8 @@ int sign(string prvkey_file_name, unsigned char* clear_buf, unsigned int clear_s
         return -1;
     }
 
+    //cout << sgnt_size << endl;
+
     // delete the digest and the private key from memory:
     EVP_MD_CTX_free(md_ctx);
     EVP_PKEY_free(prvkey);
