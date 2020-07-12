@@ -1,0 +1,11 @@
+{
+    "Alice": {
+        "priv_key": "PEM/alice_private_key_no_psw.pem"
+    },
+    "Bob": {
+        "priv_key": "PEM/bob_private_key_no_psw.pem"
+    },
+    "Oscar": {
+        "priv_key": "PEM/oscar_private_key_no_psw.pem"
+    }
+}

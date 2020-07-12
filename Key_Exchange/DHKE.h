@@ -9,6 +9,8 @@
 #include <iostream>
 #include <string>
 
+#define SESSION_KEY_SIZE 32
+
 using namespace std;
 
 
@@ -158,7 +160,7 @@ int serialize_pub_key(EVP_PKEY* ecdhkey, unsigned char*& buffer, unsigned int& s
     return 0;
 }
 
-int deserialize_pub_key(unsigned char* buffer, unsigned int size, EVP_PKEY* &pub_key){
+void deserialize_pub_key(unsigned char* buffer, unsigned int size, EVP_PKEY* &pub_key){
     // this function deserializes the public key in the buffer into an EVP_PKEY
     // ATTENTION: it allocates pub_key, remember to deallocate it afterwards
 
@@ -168,7 +170,5 @@ int deserialize_pub_key(unsigned char* buffer, unsigned int size, EVP_PKEY* &pub
     BIO_free(b);
 
     BIO_dump_fp(stdout, (const char*) pub_key, EVP_PKEY_size(pub_key));
-
-    return 0;
 }
 

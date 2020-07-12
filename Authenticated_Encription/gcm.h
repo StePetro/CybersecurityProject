@@ -1,12 +1,13 @@
+#include <openssl/bio.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/rand.h>
+#include <stdio.h>
+#include <string.h>
 
 #include <iostream>
 #include <limits>  // for INT_MAX
 #include <string>
-#include <stdio.h>
-#include <string.h>
 
 #define TAG_LEN 16
 #define IV_LEN 12
@@ -17,7 +18,7 @@ int gcm_encrypt(unsigned char *plaintext, unsigned int plaintext_len,
                 unsigned char *aad, int aad_len,
                 unsigned char *key,
                 unsigned char *&msg_buffer,
-                unsigned int& msg_len) {
+                unsigned int &msg_len) {
     // Restituisce 0 se ha successo e setta tag, ciphertext e la sua lunghezza, -1 altrimenti
     // ATTENZIONE: ricordare di fare la "delete []" per ciphertext
     // msg_buffer = (iv || aad || cyphertext || tag)
@@ -97,12 +98,12 @@ int gcm_encrypt(unsigned char *plaintext, unsigned int plaintext_len,
 int gcm_decrypt(unsigned char *msg_buffer, unsigned int msg_len,
                 int aad_len,
                 unsigned char *key,
-                unsigned char *&plaintext, unsigned int& decrypted_msg_len) {
+                unsigned char *&plaintext, unsigned int &decrypted_msg_len) {
     // Restituisce 0 e setta plaintex e plaintext_len al successo, -1 altrimenti
     // ATTENZIONE: ricordare di fare la "delete []" per plaintext
-    // Plaintext 
+    // Plaintext
 
-    plaintext = new unsigned char[msg_len - aad_len -IV_LEN -TAG_LEN];
+    plaintext = new unsigned char[msg_len - aad_len - IV_LEN - TAG_LEN + 1];  // per mettere il carattere di fine stringa
 
     EVP_CIPHER_CTX *ctx;
     int len;
@@ -135,7 +136,7 @@ int gcm_decrypt(unsigned char *msg_buffer, unsigned int msg_len,
     }
     /* Set expected tag value. Works in OpenSSL 1.0.1d and later */
     // msg_buffer = (iv || aad || cyphertext || tag)
-    if (!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG, TAG_LEN,msg_buffer + msg_len -TAG_LEN )) {
+    if (!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG, TAG_LEN, msg_buffer + msg_len - TAG_LEN)) {
         cerr << "An error occourred.\n"
              << endl;
         return -1;
@@ -149,9 +150,11 @@ int gcm_decrypt(unsigned char *msg_buffer, unsigned int msg_len,
     /* Clean up */
     EVP_CIPHER_CTX_cleanup(ctx);
 
-    if (ret > 0) {
+    if (ret = 1) {
         /* Success */
+       
         decrypted_msg_len = msg_len - TAG_LEN - IV_LEN - aad_len;
+        plaintext[decrypted_msg_len] = '\0';
         return 0;
     } else {
         /* Verify failed */

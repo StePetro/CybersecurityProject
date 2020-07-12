@@ -1,15 +1,11 @@
 {
-
-    "Alice" : { 
+    "Alice": {
         "pub_key": "PEM/alice_public_key.pem"
     },
-
-    "Bob" : {
+    "Bob": {
         "pub_key": "PEM/bob_public_key.pem"
     },
-
-    "Oscar" : {
+    "Oscar": {
         "pub_key": "PEM/oscar_public_key.pem"
     }
-
 }
