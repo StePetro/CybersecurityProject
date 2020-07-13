@@ -13,13 +13,12 @@
 
 using namespace std;
 
-
-int create_ephemeral_keys(EVP_PKEY *&my_ecdhkey) {
+int create_ephemeral_keys(EVP_PKEY*& my_ecdhkey) {
     // this function generates effemeral private and public key of ECDH
     // ATTENTION: my_ecdhkey gets allocated, remember to free it afterwards
     printf("Start: loading NID_X9_62_prime256v1 curve parameters\n");
 
-    EVP_PKEY_CTX *pctx;
+    EVP_PKEY_CTX* pctx;
     EVP_PKEY* params = NULL;
 
     if (!(pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_EC, NULL))) {
@@ -43,14 +42,14 @@ int create_ephemeral_keys(EVP_PKEY *&my_ecdhkey) {
 
     printf("Generating ephemeral ECDH KeyPair\n");
     // Create context for the key generation, an EVP structure for the key
-    EVP_PKEY_CTX *ECDHctx;
+    EVP_PKEY_CTX* ECDHctx;
 
-    // Create the context for the key generation 
+    // Create the context for the key generation
     if (NULL == (ECDHctx = EVP_PKEY_CTX_new(params, NULL))) {
         cout << "An error has occurred while creating the context for key generation" << endl;
         return -1;
     }
-    // Generate the key 
+    // Generate the key
     if (!EVP_PKEY_keygen_init(ECDHctx)) {
         cout << "An error has occurred while initializing the context for key generation" << endl;
         return -1;
@@ -60,23 +59,23 @@ int create_ephemeral_keys(EVP_PKEY *&my_ecdhkey) {
         return -1;
     }
 
-    EVP_PKEY_CTX_free(ECDHctx);    
+    EVP_PKEY_CTX_free(ECDHctx);
     EVP_PKEY_free(params);
     EVP_PKEY_CTX_free(pctx);
 
     return 0;
 }
 
-int derive_session_key(EVP_PKEY *my_ecdhkey, EVP_PKEY *peer_pubkey, unsigned char *&skey) {
+int derive_session_key(EVP_PKEY* my_ecdhkey, EVP_PKEY* peer_pubkey, unsigned char*& skey) {
     // this function derives the shared secret from the keys passed and it returns the session key
     // ATTENTION: it allocates skey, while deallocating both my_ecdhkey and peer_pubkey
 
     printf("Deriving a shared secret\n");
     //creating a context, the buffer for the shared key and an int for its length
-    unsigned char *shared_secret;
+    unsigned char* shared_secret;
     size_t shared_secret_len;
 
-    EVP_PKEY_CTX *derive_ctx = EVP_PKEY_CTX_new(my_ecdhkey, NULL);  
+    EVP_PKEY_CTX* derive_ctx = EVP_PKEY_CTX_new(my_ecdhkey, NULL);
     if (NULL == derive_ctx) {
         cout << "An error has occurred while creating the context for key derivation" << endl;
         return -1;
@@ -117,7 +116,7 @@ int derive_session_key(EVP_PKEY *my_ecdhkey, EVP_PKEY *peer_pubkey, unsigned cha
     EVP_DigestInit(Hctx, EVP_sha256());
     EVP_DigestUpdate(Hctx, (unsigned char*)shared_secret, shared_secret_len);
     EVP_DigestFinal(Hctx, skey, &skeylen);
-    
+
     //Print digest to screen in hexadecimal
     int n;
     cout << "Digest is:" << endl;
@@ -138,19 +137,19 @@ int derive_session_key(EVP_PKEY *my_ecdhkey, EVP_PKEY *peer_pubkey, unsigned cha
     delete[] shared_secret;
 }
 
-int serialize_pub_key(EVP_PKEY* ecdhkey, unsigned char*& buffer, unsigned int& size){
+int serialize_pub_key(EVP_PKEY* ecdhkey, unsigned char*& buffer, unsigned int& size) {
     // this function serializes only the public key in the buffer
     // ATTENTION: it allocates buffer, remember to deallocate it afterwards
 
     BIO* b = BIO_new(BIO_s_mem());
     PEM_write_bio_PUBKEY(b, ecdhkey);
-    char * serialize_buffer = NULL;
+    char* serialize_buffer = NULL;
     long pubkey_size = BIO_get_mem_data(b, &serialize_buffer);
-    if (pubkey_size > UINT_MAX || pubkey_size < 0){
+    if (pubkey_size > UINT_MAX || pubkey_size < 0) {
         cout << "Problem! The size of the serialized public key lies outside a simple unsigned int" << endl;
         return -1;
     }
-    size = (unsigned int) pubkey_size - 1;
+    size = (unsigned int)pubkey_size - 1;
     buffer = new unsigned char[size];
     memcpy(buffer, serialize_buffer, size);
 
@@ -158,7 +157,7 @@ int serialize_pub_key(EVP_PKEY* ecdhkey, unsigned char*& buffer, unsigned int& s
     return 0;
 }
 
-void deserialize_pub_key(unsigned char* buffer, unsigned int size, EVP_PKEY* &pub_key){
+void deserialize_pub_key(unsigned char* buffer, unsigned int size, EVP_PKEY*& pub_key) {
     // this function deserializes the public key in the buffer into an EVP_PKEY
     // ATTENTION: it allocates pub_key, remember to deallocate it afterwards
 
@@ -167,6 +166,5 @@ void deserialize_pub_key(unsigned char* buffer, unsigned int size, EVP_PKEY* &pu
     pub_key = PEM_read_bio_PUBKEY(b, NULL, NULL, NULL);
     BIO_free(b);
 
-    BIO_dump_fp(stdout, (const char*) pub_key, EVP_PKEY_size(pub_key));
+    BIO_dump_fp(stdout, (const char*)pub_key, EVP_PKEY_size(pub_key));
 }
-
