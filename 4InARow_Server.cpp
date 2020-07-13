@@ -159,6 +159,8 @@ int main(int argc, char *argv[]) {
                         //Toglie l'utente disconnesso dalla lista
                         users[logged_users[i].asString()]["IP"] = {};
                         users[logged_users[i].asString()]["PORT"] = {};
+                        users[logged_users[i].asString()]["READY"] = {};
+                        users[logged_users[i].asString()]["i"] = {};
                         logged_users[i] = {};
 #pragma optimize("", off)
                         memset(nonce_list[i], 0, NONCE_SIZE);
@@ -174,39 +176,16 @@ int main(int argc, char *argv[]) {
                     // Incremento il nonce di 1 se user loggato
                     if (!logged_users[i].empty()) {
                         nonce_add_one(nonce_list[i]);
-                        //cout << "Nonce subito dopo read" << endl;
-                        //BIO_dump_fp(stdout, (const char *)nonce_list[i], NONCE_SIZE);
-                        // Se il nonce è sbagliato chiude la connessione
                         if (memcmp(buffer + IV_LEN, nonce_list[i], NONCE_SIZE) != 0) {
                             cerr << "Wrong nonce" << endl;
-                            close(socket_id);
-                            socket_list[i] = 0;
-                            //Toglie l'utente disconnesso dalla lista
-                            users[logged_users[i].asString()]["IP"] = {};
-                            users[logged_users[i].asString()]["PORT"] = {};
-                            logged_users[i] = {};
-#pragma optimize("", off)
-                            memset(nonce_list[i], 0, NONCE_SIZE);
-                            memset(session_key_list[i], 0, SESSION_KEY_SIZE);
-#pragma optimize("", on)
+                            close_socket_logged(socket_list[i], socket_list, users, logged_users, session_key_list, nonce_list, i);
                             continue;
                         }
                         if (gcm_decrypt((unsigned char *)buffer, bytes_read, NONCE_SIZE, session_key_list[i], decrypted_msg, decrypted_msg_len) != 0) {
                             cerr << "Decryption failed" << endl;
-                            close(socket_id);
-                            socket_list[i] = 0;
-                            //Toglie l'utente disconnesso dalla lista
-                            users[logged_users[i].asString()]["IP"] = {};
-                            users[logged_users[i].asString()]["PORT"] = {};
-                            logged_users[i] = {};
-#pragma optimize("", off)
-                            memset(nonce_list[i], 0, NONCE_SIZE);
-                            memset(session_key_list[i], 0, SESSION_KEY_SIZE);
-#pragma optimize("", on)
+                            close_socket_logged(socket_list[i], socket_list, users, logged_users, session_key_list, nonce_list, i);
                             continue;
                         }
-
-                        cout << "Messaggio decifrato: " << decrypted_msg << " lunghezza: " << decrypted_msg_len << endl;
                     }
 
                     // COMANDO /cert
@@ -221,15 +200,10 @@ int main(int argc, char *argv[]) {
                     if (tmp.length() < bytes_read && strncmp((const char *)buffer, tmp.c_str(), tmp.length()) == 0) {
                         if (login_handler(socket_id, users, logged_users, buffer, address, addrlen, socket_list, i, session_key_list) == 0) {
                             // Parte da 0 con il nonce e lo incrementa da ora in poi
-                            //cout << i << endl;
+
 #pragma optimize("", off)
                             memset(nonce_list[i], 0, NONCE_SIZE);
 #pragma optimize("", on)
-                            for (int i = 0; i < MAX_CLIENTS; i++) {
-                                //cout << i << endl;
-                                //BIO_dump_fp(stdout, (const char *)nonce_list[i], NONCE_SIZE);
-                            }
-
                             continue;
                         }
                         // Se il login fallisce
@@ -274,149 +248,15 @@ int main(int argc, char *argv[]) {
                         // COMANDO /challenge
                         tmp = "/challenge:";
                         if (tmp.length() < decrypted_msg_len && strncmp((const char *)decrypted_msg, tmp.c_str(), tmp.length()) == 0) {
-                            string challenged = string((char *)decrypted_msg);
-                            challenged = challenged.substr(challenged.find(":") + 1);
-                            cout << challenged << endl;
-                            if (users[challenged]["IP"].asString().compare("") == 0) {
-                                message = "NF";
-                            } else {
-                                // Nome utente del challenger
-                                message = logged_users[i].asString();
-
-                                // Invia il nome all' utente sfidato
-                                int index_challenged = users[challenged]["i"].asInt();
-
-                                if (send_encrypted((unsigned char *)message.c_str(), message.length(), nonce_list[index_challenged], NONCE_SIZE, session_key_list[index_challenged], nonce_list[index_challenged], socket_list[index_challenged]) != 0) {
-                                    cerr << "Errore nell'invio criptato delle informazioni allo sfidato" << endl;
-                                    continue;
-                                }
-
-                                // Risposta sfidato
-                                if ((bytes_read = read(socket_list[index_challenged], buffer, MSG_MAX_LEN)) == 0) {
-                                    close_socket_logged(socket_list[index_challenged], socket_list, users, logged_users, session_key_list, nonce_list, index_challenged);
-                                }
-
-                                // Decriptato
-                                if (read_encrypted(buffer, bytes_read, decrypted_msg, decrypted_msg_len, nonce_list, users, session_key_list, index_challenged, socket_id, socket_list, logged_users) != 0) {
-                                    continue;
-                                }
-
-                                string challenger = logged_users[i].asString();
-                                BIO_dump_fp(stdout, (const char *)decrypted_msg, decrypted_msg_len);
-                                string y = "y";
-                                if (y.compare(0, y.length(), (const char *)decrypted_msg) == 0) {
-                                    // Verso lo sfidato
-                                    // formato messaggio (len IP || IP || PEM public key sfidante)
-                                    cout << "Sono entrato nella sfida accettata" << endl;
-
-                                    // Invio dati del challenged al challenger ----------------------------
-                                    string ip = users[challenged]["IP"].asString();
-                                    uint32_t ip_len = ip.length();
-                                    cout << "IP letto: " << ip << "Lunghezza: " << ip_len << endl;
-                                    memcpy(buffer, &ip_len, sizeof(uint32_t));
-                                    memcpy(buffer + sizeof(uint32_t), ip.c_str(), ip_len);
-
-                                    // Apre il file PEM
-                                    FILE *pem_file = fopen(users[challenged]["pub_key"].asCString(), "rb");
-                                    if (!pem_file) {
-                                        cerr << "Error: cannot open file '"
-                                             << CERTIFICATE_PATH
-                                             << "' (no permissions?)\n";
-                                        return -1;
-                                    }
-
-                                    // Legge la lunghezza del certificato
-                                    fseek(pem_file, 0L, SEEK_END);
-                                    long pem_file_size = ftell(pem_file);
-                                    rewind(pem_file);
-
-                                    // Scrive il certificato nel buffer
-                                    if (fread(buffer + sizeof(uint32_t) + ip_len, 1, pem_file_size, pem_file) < pem_file_size) {
-                                        cerr << "Error while reading file '"
-                                             << CERTIFICATE_PATH
-                                             << "'\n";
-                                        continue;
-                                    }
-                                    fclose(pem_file);
-                                    BIO_dump_fp(stdout, (const char *)buffer, ip_len + sizeof(uint32_t) + pem_file_size);
-
-                                    // Invia il messaggio
-                                    if (send_encrypted((unsigned char *)buffer, ip_len + sizeof(uint32_t) + pem_file_size, nonce_list[i], NONCE_SIZE, session_key_list[i], nonce_list[i], socket_list[i]) == -1) {
-                                        //gestione errore
-                                        cerr << "Errore nell'invio criptato delle informazioni allo sfidato" << endl;
-                                    }
-
-                                    // Invio dati del challenger al challenged ----------------------------
-                                    ip = users[challenger]["IP"].asString();
-                                    ip_len = ip.length();
-                                    cout << "IP letto: " << ip << "Lunghezza: " << ip_len << endl;
-                                    memcpy(buffer, &ip_len, sizeof(uint32_t));
-
-                                    cout << "IP_LEN" << endl;
-                                    BIO_dump_fp(stdout, (const char *)buffer, sizeof(uint32_t));
-
-                                    memcpy(buffer + sizeof(uint32_t), ip.c_str(), ip_len);
-
-                                    cout << "IP_LEN" << endl;
-                                    BIO_dump_fp(stdout, (const char *)buffer, sizeof(uint32_t) + ip_len);
-
-                                    // Apre il file PEM
-                                    pem_file = fopen(users[challenger]["pub_key"].asCString(), "rb");
-                                    if (!pem_file) {
-                                        cerr << "Error: cannot open file '"
-                                             << CERTIFICATE_PATH
-                                             << "' (no permissions?)\n";
-                                        continue;
-                                    }
-
-                                    // Legge la lunghezza del certificato
-                                    fseek(pem_file, 0L, SEEK_END);
-                                    pem_file_size = ftell(pem_file);
-                                    rewind(pem_file);
-
-                                    // Scrive il certificato nel buffer
-                                    if (fread(buffer + sizeof(uint32_t) + ip_len, 1, pem_file_size, pem_file) < pem_file_size) {
-                                        cerr << "Error while reading file '"
-                                             << CERTIFICATE_PATH
-                                             << "'\n";
-                                        continue;
-                                    }
-                                    fclose(pem_file);
-
-                                    cout << "Tutto" << endl;
-                                    BIO_dump_fp(stdout, (const char *)buffer, ip_len + sizeof(uint32_t) + pem_file_size);
-
-                                    // Invia il messaggio
-                                    if (send_encrypted((unsigned char *)buffer, ip_len + sizeof(uint32_t) + pem_file_size, nonce_list[index_challenged], NONCE_SIZE, session_key_list[index_challenged], nonce_list[index_challenged], socket_list[index_challenged]) == -1) {
-                                        //gestione errore
-                                        cerr << "Errore nell'invio criptato delle informazioni allo sfidato" << endl;
-                                        continue;
-                                    }
-
-                                    continue;
-                                } else {
-                                    message = "NA";  // sfida non accettata
-                                }
-                            }
+                           if(challenge_handler(buffer, i, socket_id, socket_list, decrypted_msg, decrypted_msg_len, message, users, logged_users, nonce_list, session_key_list) >= 0){
+                               continue;
+                           }
                         }
 
-                        nonce_add_one(nonce_list[i]);
-                        // cout << "Nonce inviato allo sfidante: " << endl;
-                        //BIO_dump_fp(stdout, (const char *)nonce_list[i], NONCE_SIZE);
-                        if (gcm_encrypt((unsigned char *)message.c_str(), message.length(), nonce_list[i], NONCE_SIZE, session_key_list[i], final_msg, final_msg_len) != 0) {
-                            cerr << "Error in encrypting the message" << endl;
-                            string message = "ERR";
-                            if (send(socket_id, message.c_str(), message.length(), 0) != message.length()) {
-                                cerr << "Error in sending the message" << endl;
-                            }
-                        }
-                        if (send(socket_id, final_msg, final_msg_len, 0) != final_msg_len) {
-                            cerr << "Error in sending the message" << endl;
-                        }
+                        send_encrypted((unsigned char *)message.c_str(), message.length(), nonce_list[i], NONCE_SIZE, session_key_list[i], nonce_list[i], socket_id);
                         continue;
                     }
 
-                    cout << "fine" << endl;
                     // Comando non valido o errore nei comandi precedenti
                     string message = "ERR";
                     if (send(socket_id, message.c_str(), message.length(), 0) != message.length()) {

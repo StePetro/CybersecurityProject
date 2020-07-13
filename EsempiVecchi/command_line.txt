@@ -1,6 +1,0 @@
-Generate a private key protected by a password:
-	openssl genrsa -aes128 -f4 -out private_key.pem
-
-Extract a public key from a file:
-	openssl rsa -in key.pem -outform PEM -pubout -out public_key.pem
-

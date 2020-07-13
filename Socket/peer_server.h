@@ -46,13 +46,11 @@ class PeerServerConnection {
             cerr << "Error on the listen" << endl;
             return -1;
         }
-        cout << "1" << endl;
         if ((new_socket = accept(server_fd, (struct sockaddr *)&address,
                                  (socklen_t *)&addrlen)) < 0) {
             cerr << "Error on the accept" << endl;
             return -1;
         }
-        cout << "2" << endl;
         return 0;
     };
 

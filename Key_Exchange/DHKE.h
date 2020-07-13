@@ -16,7 +16,6 @@ using namespace std;
 int create_ephemeral_keys(EVP_PKEY*& my_ecdhkey) {
     // this function generates effemeral private and public key of ECDH
     // ATTENTION: my_ecdhkey gets allocated, remember to free it afterwards
-    printf("Start: loading NID_X9_62_prime256v1 curve parameters\n");
 
     EVP_PKEY_CTX* pctx;
     EVP_PKEY* params = NULL;
@@ -40,7 +39,7 @@ int create_ephemeral_keys(EVP_PKEY*& my_ecdhkey) {
         return -1;
     }
 
-    printf("Generating ephemeral ECDH KeyPair\n");
+    //printf("Generating ephemeral ECDH KeyPair\n");
     // Create context for the key generation, an EVP structure for the key
     EVP_PKEY_CTX* ECDHctx;
 
@@ -70,7 +69,6 @@ int derive_session_key(EVP_PKEY* my_ecdhkey, EVP_PKEY* peer_pubkey, unsigned cha
     // this function derives the shared secret from the keys passed and it returns the session key
     // ATTENTION: it allocates skey, while deallocating both my_ecdhkey and peer_pubkey
 
-    printf("Deriving a shared secret\n");
     //creating a context, the buffer for the shared key and an int for its length
     unsigned char* shared_secret;
     size_t shared_secret_len;
@@ -117,13 +115,6 @@ int derive_session_key(EVP_PKEY* my_ecdhkey, EVP_PKEY* peer_pubkey, unsigned cha
     EVP_DigestUpdate(Hctx, (unsigned char*)shared_secret, shared_secret_len);
     EVP_DigestFinal(Hctx, skey, &skeylen);
 
-    //Print digest to screen in hexadecimal
-    int n;
-    cout << "Digest is:" << endl;
-    for (n = 0; n < EVP_MD_size(EVP_sha256()); n++)
-        printf("%02x", (unsigned char)skey[n]);
-    cout << endl;
-
     //FREE EVERYTHING INVOLVED WITH THE EXCHANGE 
     EVP_PKEY_CTX_free(derive_ctx);
     EVP_MD_CTX_free(Hctx);
@@ -165,6 +156,4 @@ void deserialize_pub_key(unsigned char* buffer, unsigned int size, EVP_PKEY*& pu
     BIO_write(b, buffer, size);
     pub_key = PEM_read_bio_PUBKEY(b, NULL, NULL, NULL);
     BIO_free(b);
-
-    BIO_dump_fp(stdout, (const char*)pub_key, EVP_PKEY_size(pub_key));
 }

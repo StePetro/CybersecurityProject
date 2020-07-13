@@ -1,6 +1,5 @@
 #include "../utility.h"
 
-
 // CERTIFICATO ------------------------------------------------------------------------------------------------------------
 
 int cert_handler(int socket) {
@@ -40,7 +39,6 @@ int cert_handler(int socket) {
     delete[] certificate_buff;
     return 0;
 }
-
 
 // LOGIN ------------------------------------------------------------------------------------------------------------
 
@@ -181,7 +179,6 @@ int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, cha
     }
 
     // ( sgn_len || nonce_c || pubk_s)
-    cout << signed_len << endl;
     memcpy(buffer, &signed_len, sizeof(uint32_t));
 
     // Invio messaggio = (sgn_len || nonce_c || pubk_s || sgn(nonce_c || pubk_s))
@@ -214,7 +211,6 @@ int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, cha
     // Prelevo la dimensione della firma
     uint32_t SGN_SIZE = 0;
     memcpy(&SGN_SIZE, buffer, sizeof(uint32_t));
-    cout << SGN_SIZE << endl;
 
     // Controlla la firma, chiude la connessione se sbagliata, buff = (sgn_len || nonce_s || pubk_c || sgn(nonce_s || pubk_c))
     if (verify_sign(users[username]["pub_key"].asString(), (unsigned char *)buffer + sizeof(uint32_t), bytes_read - SGN_SIZE - sizeof(uint32_t), (unsigned char *)buffer + bytes_read - SGN_SIZE, SGN_SIZE) != 0) {
@@ -239,7 +235,6 @@ int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, cha
     users[username]["PORT"] = ntohs(address.sin_port);
 
     session_key_list[i] = session_key;
-    cout << users << endl;
     // Aggiungo anche l'informazione su quale user sta usando un certo slot dei socket
     socket_slots[i] = username;
 
@@ -247,4 +242,127 @@ int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, cha
     delete[] nonce_s;
     delete[] nonce_c;
     return 0;
+}
+
+// CHALLENGE HANDLER ________________________________________________________________________
+
+int challenge_handler(char *buffer, int i, int socket_id, int *socket_list, unsigned char *decrypted_msg, unsigned int decrypted_msg_len, string &message, Json::Value &users, Json::Value &logged_users, unsigned char **nonce_list, unsigned char **session_key_list) {
+    unsigned int bytes_read;
+    string challenged = string((char *)decrypted_msg);
+    challenged = challenged.substr(challenged.find(":") + 1);
+    if (users[challenged]["READY"].empty()) {
+        message = "NF";
+        return -1;
+    } else {
+        users[challenged]["READY"] = {};
+
+        // Nome utente del challenger
+        message = logged_users[i].asString();
+
+        // Invia il nome all' utente sfidato
+        int index_challenged = users[challenged]["i"].asInt();
+
+        if (send_encrypted((unsigned char *)message.c_str(), message.length(), nonce_list[index_challenged], NONCE_SIZE, session_key_list[index_challenged], nonce_list[index_challenged], socket_list[index_challenged]) != 0) {
+            cerr << "Errore nell'invio criptato delle informazioni allo sfidato" << endl;
+            return 1;
+        }
+
+        // Risposta sfidato
+        if ((bytes_read = read(socket_list[index_challenged], buffer, MSG_MAX_LEN)) == 0) {
+            close_socket_logged(socket_list[index_challenged], socket_list, users, logged_users, session_key_list, nonce_list, index_challenged);
+        }
+
+        // Decriptato
+        if (read_encrypted(buffer, bytes_read, decrypted_msg, decrypted_msg_len, nonce_list, users, session_key_list, index_challenged, socket_id, socket_list, logged_users) != 0) {
+            return 1;
+        }
+
+        string challenger = logged_users[i].asString();
+
+        string y = "y";
+        if (y.compare(0, y.length(), (const char *)decrypted_msg) == 0) {
+            // Verso lo sfidato
+            // formato messaggio (len IP || IP || PEM public key sfidante)
+            cout << "Sono entrato nella sfida accettata" << endl;
+
+            // Invio dati del challenged al challenger ----------------------------
+            string ip = users[challenged]["IP"].asString();
+            uint32_t ip_len = ip.length();
+            cout << "IP letto: " << ip << "Lunghezza: " << ip_len << endl;
+            memcpy(buffer, &ip_len, sizeof(uint32_t));
+            memcpy(buffer + sizeof(uint32_t), ip.c_str(), ip_len);
+
+            // Apre il file PEM
+            FILE *pem_file = fopen(users[challenged]["pub_key"].asCString(), "rb");
+            if (!pem_file) {
+                cerr << "Error: cannot open file '"
+                     << CERTIFICATE_PATH
+                     << "' (no permissions?)\n";
+                return 1;
+            }
+
+            // Legge la lunghezza del certificato
+            fseek(pem_file, 0L, SEEK_END);
+            long pem_file_size = ftell(pem_file);
+            rewind(pem_file);
+
+            // Scrive il certificato nel buffer
+            if (fread(buffer + sizeof(uint32_t) + ip_len, 1, pem_file_size, pem_file) < pem_file_size) {
+                cerr << "Error while reading file '"
+                     << CERTIFICATE_PATH
+                     << "'\n";
+                return 1;
+            }
+            fclose(pem_file);
+
+            // Invia il messaggio
+            if (send_encrypted((unsigned char *)buffer, ip_len + sizeof(uint32_t) + pem_file_size, nonce_list[i], NONCE_SIZE, session_key_list[i], nonce_list[i], socket_list[i]) == -1) {
+                //gestione errore
+                cerr << "Errore nell'invio criptato delle informazioni allo sfidato" << endl;
+            }
+
+            // Invio dati del challenger al challenged ----------------------------
+            ip = users[challenger]["IP"].asString();
+            ip_len = ip.length();
+            cout << "IP letto: " << ip << "Lunghezza: " << ip_len << endl;
+            memcpy(buffer, &ip_len, sizeof(uint32_t));
+            memcpy(buffer + sizeof(uint32_t), ip.c_str(), ip_len);
+
+            // Apre il file PEM
+            pem_file = fopen(users[challenger]["pub_key"].asCString(), "rb");
+            if (!pem_file) {
+                cerr << "Error: cannot open file '"
+                     << CERTIFICATE_PATH
+                     << "' (no permissions?)\n";
+                return 1;
+            }
+
+            // Legge la lunghezza del certificato
+            fseek(pem_file, 0L, SEEK_END);
+            pem_file_size = ftell(pem_file);
+            rewind(pem_file);
+
+            // Scrive il certificato nel buffer
+            if (fread(buffer + sizeof(uint32_t) + ip_len, 1, pem_file_size, pem_file) < pem_file_size) {
+                cerr << "Error while reading file '"
+                     << CERTIFICATE_PATH
+                     << "'\n";
+                return 1;
+            }
+            fclose(pem_file);
+
+            // Invia il messaggio
+            if (send_encrypted((unsigned char *)buffer, ip_len + sizeof(uint32_t) + pem_file_size, nonce_list[index_challenged], NONCE_SIZE, session_key_list[index_challenged], nonce_list[index_challenged], socket_list[index_challenged]) == -1) {
+                //gestione errore
+                cerr << "Errore nell'invio criptato delle informazioni allo sfidato" << endl;
+                return 1;
+            }
+
+            return 0;
+        } else {
+            message = "NA";  // sfida non accettata
+            return -1;
+        }
+        return -1;
+    }
 }

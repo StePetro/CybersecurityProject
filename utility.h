@@ -43,7 +43,6 @@ int send_encrypted(unsigned char *plaintext, unsigned int plaintext_len,
     unsigned int msg_len;
 
     nonce_add_one(nonce);
-    BIO_dump_fp(stdout, (const char *)nonce, NONCE_SIZE);
     if (gcm_encrypt((unsigned char *)plaintext, plaintext_len, nonce, NONCE_SIZE, key, msg_buffer, msg_len) != 0) {
         cerr << "Error in encrypting the message" << endl;
         string message = "ERR";
@@ -64,7 +63,7 @@ void close_socket_logged(int socket_id, int *client_socket, Json::Value users, J
     //Toglie l'utente disconnesso dalla lista
     users[logged_users[i].asString()]["IP"] = {};
     users[logged_users[i].asString()]["PORT"] = {};
-    users[logged_users[i].asString()]["READY"] = false;
+    users[logged_users[i].asString()]["READY"] = {};
     users[logged_users[i].asString()]["i"] = {};
     logged_users[i] = {};
 #pragma optimize("", off)

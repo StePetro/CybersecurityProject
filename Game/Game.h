@@ -68,7 +68,7 @@ class Game{
                bool success = false;
 
                do{
-                    cout <<  "Insert move: (" << piece << ")";
+                    cout <<  "Insert move (" << piece << "):";
                     column = readColumn();
                     success = insertPiece(board, piece, column);
                }
@@ -160,7 +160,7 @@ class Game{
                     }
                }
                // no free spot available
-               cout << "Colonna Piena" << endl;
+               cout << "Column full" << endl;
                return false;
          }
 
@@ -184,10 +184,10 @@ class Game{
                                   // we can return it
                                   break;
                               }
-                              cout << "Colonna non esistente!" << endl << endl;
+                              cout << "Column not existent!" << endl << endl;
                         }
                    }
-                   cout << "Inserisci una colonna valida: ";
+                   cout << "Insert a valid column: ";
                }
 
                return column;
@@ -195,53 +195,3 @@ class Game{
 
 
 };
-
-
-
-// main di prova con 2 giocatori locali
-/*
-int main(){
-
-     Game g;
-     char** board = g.createBoard();
-     size_t column;
-
-     g.printBoard(board);
-
-     while(true){
-          // giocatore 1
-          g.nextMove(board, 'X');
-
-          g.printBoard(board);
-
-          if(g.checkWin(board, 'X')){
-               cout << "Giocatore 1 ha vinto!!!" << endl;
-               break;
-          }
-          if(g.isBoardFull(board)){
-               cout << "Pareggio" << endl;
-               break;
-          }
-
-          // giocatore 2
-          g.nextMove(board, 'O');
-
-          g.printBoard(board);
-
-          if(g.checkWin(board, 'O')){
-               cout << "Giocatore 2 ha vinto!!!" << endl;
-               break;
-          }
-          if(g.isBoardFull(board)){
-               cout << "Pareggio" << endl;
-               break;
-          }
-
-     }
-
-     cout << "Chiusura gioco..." << endl;
-
-     g.deleteBoard(board);
-
-}
-*/

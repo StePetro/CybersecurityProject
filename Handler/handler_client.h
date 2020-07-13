@@ -73,11 +73,11 @@ int play_server(PeerServerConnection &psc, unsigned char *session_key, unsigned 
         g.printBoard(board);
 
         if (g.checkWin(board, 'X')) {
-            cout << "Ha vinto l'avversario" << endl;
+            cout << "You won" << endl;
             break;
         }
         if (g.isBoardFull(board)) {
-            cout << "Pareggio" << endl;
+            cout << "Draw" << endl;
             break;
         }
 
@@ -97,16 +97,16 @@ int play_server(PeerServerConnection &psc, unsigned char *session_key, unsigned 
         }
 
         if (g.checkWin(board, 'O')) {
-            cout << "Hai vinto" << endl;
+            cout << "You won" << endl;
             break;
         }
         if (g.isBoardFull(board)) {
-            cout << "Pareggio" << endl;
+            cout << "Draw" << endl;
             break;
         }
     }
 
-    cout << "Chiusura gioco..." << endl;
+    cout << "Ending game..." << endl;
 
     g.deleteBoard(board);
 
@@ -148,11 +148,11 @@ int play_client(PeerClientConnection &pcc, unsigned char *session_key, unsigned 
         }
 
         if (g.checkWin(board, 'X')) {
-            cout << "Hai vinto" << endl;
+            cout << "You won" << endl;
             break;
         }
         if (g.isBoardFull(board)) {
-            cout << "Pareggio" << endl;
+            cout << "Draw" << endl;
             break;
         }
         cout << "Waiting adversary move..." << endl;
@@ -173,7 +173,6 @@ int play_client(PeerClientConnection &pcc, unsigned char *session_key, unsigned 
             return -1;
         }
 
-        
         memcpy(&column, decrypted_msg, decrypted_msg_len);
 
         // inseriscila nel campo
@@ -185,16 +184,16 @@ int play_client(PeerClientConnection &pcc, unsigned char *session_key, unsigned 
         g.printBoard(board);
 
         if (g.checkWin(board, 'O')) {
-            cout << "Ha vinto l'avversario" << endl;
+            cout << "The adversary won" << endl;
             break;
         }
         if (g.isBoardFull(board)) {
-            cout << "Pareggio" << endl;
+            cout << "Draw" << endl;
             break;
         }
     }
 
-    cout << "Chiusura gioco..." << endl;
+    cout << "Ending game..." << endl;
 
     g.deleteBoard(board);
 
@@ -413,8 +412,6 @@ int login_handler(string &pkey_path, unsigned char *msg_buffer, PeerClientConnec
 
             // Invio messaggio = (sgn_len || nonce_s || pubk_c || sgn(nonce_s || pubk_c))
             memcpy(msg_buffer + sizeof(uint32_t) + NONCE_SIZE + public_key_client_buf_size, signed_msg, signed_msg_size);
-            //BIO_dump_fp(stdout, (const char *)msg_buffer, sizeof(uint32_t) + NONCE_SIZE + public_key_client_buf_size + signed_msg_size);
-            //BIO_dump_fp(stdout, (const char *)nonce_c, NONCE_SIZE);
             if (cc.send_msg(msg_buffer, sizeof(uint32_t) + NONCE_SIZE + public_key_client_buf_size + signed_msg_size) != 0) {
                 cerr << "Error in sending the message" << endl;
                 return -1;
@@ -442,8 +439,6 @@ int session_key_peer_client_negotiation(string pkey_path, unsigned char *&sessio
         cerr << "Peer disconnected" << endl;
         return -1;
     }
-
-    cout << msg_buffer << endl;
 
     uint32_t size_sign_pubk_s = 0;
     // recupero size della firma (sgn_size || nonce_s || pubk_s || sgn(pubk_s)
@@ -521,8 +516,6 @@ int session_key_peer_client_negotiation(string pkey_path, unsigned char *&sessio
         cerr << "Peer disconnected" << endl;
         return -1;
     }
-
-    BIO_dump_fp(stdout, (const char *)msg_buffer, bytes_read);
 
     // verifica nonce_c
     if (verify_sign(pubkey_challenger, nonce_c, NONCE_SIZE, msg_buffer, bytes_read) != 0) {
@@ -630,8 +623,6 @@ int find_handler(string pkey_path, unsigned char *msg_buffer, PeerClientConnecti
         uint32_t ip_size = 0;
         memcpy(&ip_size, decrypted_msg, sizeof(uint32_t));
 
-        cout << ip_size << endl;
-
         // ALLOCARE STRINGA IP E BUFFER PER PEM
         unsigned char *IP_challenger = new unsigned char[ip_size + 1];
         EVP_PKEY *pubkey_challenger;
@@ -661,7 +652,7 @@ int find_handler(string pkey_path, unsigned char *msg_buffer, PeerClientConnecti
             return -1;
         }
 
-        if(play_client(pcc, session_key_peer, msg_buffer) != 0){
+        if (play_client(pcc, session_key_peer, msg_buffer) != 0) {
             return -1;
         }
     }
@@ -718,7 +709,6 @@ int session_key_peer_server_negotiation(PeerServerConnection &psc, string pkey_p
     }
 
     // ( sgn_len || nonce_c || pubk_s || _____)
-    cout << signed_len << endl;
     memcpy(msg_buffer, &signed_len, sizeof(uint32_t));
 
     // Invio messaggio = (sgn_len || nonce_c || pubk_s || sgn(nonce_c || pubk_s))
@@ -778,10 +768,6 @@ int session_key_peer_server_negotiation(PeerServerConnection &psc, string pkey_p
         return -1;
     }
 
-    // iniziare partita
-
-    cout << "FIN QUI TUTTO BENE" << endl;
-
     // Dealloco i nonce
     delete[] clear_buff;
     delete[] nonce_s;
@@ -818,6 +804,12 @@ int challenge_handler(string pkey_path, unsigned char *msg_buffer, PeerClientCon
         return -1;
     }
 
+    string nf = "NF";
+    if ((nf.compare(0, nf.length(), (const char *)decrypted_msg) == 0)) {
+        cout << "Challenger not found" << endl;
+        return -1;
+    }
+
     // massaggio (lunghezza indirizzo || IP || PEM pubkey)
     uint32_t ip_size = 0;
     memcpy(&ip_size, decrypted_msg, sizeof(uint32_t));
@@ -835,16 +827,6 @@ int challenge_handler(string pkey_path, unsigned char *msg_buffer, PeerClientCon
     //deserializzo il pem
     deserialize_pub_key(PEM_pubkey_challenged, size_PEM, pubkey_challenged);
 
-    cout << "ip size letto " << ip_size << endl;
-
-    cout << "ip letto " << endl;
-    BIO_dump_fp(stdout, (const char *)IP_challenged, ip_size);
-    cout << "size ip " << ip_size << endl;
-    cout << "pem letto " << endl;
-    BIO_dump_fp(stdout, (const char *)PEM_pubkey_challenged, size_PEM);
-
-    cout << "pem size " << size_PEM << endl;
-
     // Scambio chiavi  -----------------------------------------------------------------------------------
 
     unsigned char *session_key;
@@ -860,7 +842,7 @@ int challenge_handler(string pkey_path, unsigned char *msg_buffer, PeerClientCon
 
     // Inizio partita -----------------------------------------------------------------------------------
 
-    if (play_server(psc, session_key, msg_buffer) != 0){
+    if (play_server(psc, session_key, msg_buffer) != 0) {
         return -1;
     }
 

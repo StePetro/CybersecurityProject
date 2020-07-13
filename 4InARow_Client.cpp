@@ -38,8 +38,6 @@ main(int argc, char const *argv[]) {
             unsigned int final_msg_len;
             // il nonce va incrementato prima di inviare/ricevere un messaggio
             nonce_add_one(nonce_server);
-            //cout << "Prima invio messaggio" << endl;
-            //BIO_dump_fp(stdout, (const char *)nonce_server, NONCE_SIZE);
             gcm_encrypt((unsigned char *)msg.c_str(), msg.length(), nonce_server, NONCE_SIZE, session_key_server, final_msg, final_msg_len);
             cc.send_msg(final_msg, final_msg_len);
         } else {
@@ -105,10 +103,19 @@ main(int argc, char const *argv[]) {
                 cerr << "A problem has occurred while decrypting the message. \n Aborting connection..." << endl;
                 break;
             }
-
-            cout << decrypted_msg << endl;
+            string err = "ERR";
+            if (err.compare(0, decrypted_msg_len, (const char *)decrypted_msg) == 0) {
+                cout << "Error: possible wrong command" << endl;
+            } else {
+                cout << decrypted_msg << endl;
+            }
         } else {
-            cout << msg_buffer << endl;
+            string err = "ERR";
+            if (err.compare(0, bytes_read, (const char *)msg_buffer) == 0) {
+                cout << "Error: possible wrong command" << endl;
+            } else {
+                cout << msg_buffer << endl;
+            }
         }
     }
     return 0;
