@@ -6,6 +6,7 @@ main(int argc, char const *argv[]) {
     long bytes_read = 0;
     unsigned char *session_key_server = NULL;
     unsigned char nonce_server[NONCE_SIZE] = {0};
+    string pkey_path;
 
     // Socket client
     PeerClientConnection cc;
@@ -49,7 +50,7 @@ main(int argc, char const *argv[]) {
         // A seconda del comando inserito lo gestisco in maniera appropriata
         // Gestione richiesta certificato
         if (msg.compare(0, string("/login:").size(), "/login:") == 0 && session_key_server == NULL) {
-            if (login_handler((unsigned char *)msg_buffer, cc, session_key_server, msg.substr(msg.find(":") + 1)) != 0) {
+            if (login_handler(pkey_path, (unsigned char *)msg_buffer, cc, session_key_server, msg.substr(msg.find(":") + 1)) != 0) {
                 cerr << "Login failed" << endl;
                 break;
             }
@@ -67,7 +68,7 @@ main(int argc, char const *argv[]) {
         // Gestione richiesta di cercare uno sfidante
         if (msg.compare("/find") == 0 ) {
             cout << "I'm looking for a challenger..." << endl;
-            if (find_handler((unsigned char *)msg_buffer, cc, session_key_server, nonce_server) != 0) {
+            if (find_handler(pkey_path, (unsigned char *)msg_buffer, cc, session_key_server, nonce_server) != 0) {
                 // notifico errore, oppure rifiuto da parte dello sfidato
                 continue;
             }
@@ -76,7 +77,9 @@ main(int argc, char const *argv[]) {
         // Gestione richiesta di cercare uno sfidante
         if (msg.compare(0, string("/challenge:").size(), "/challenge:") == 0 ) {
             cout << "Waiting response..." << endl;
-            challenge_handler((unsigned char *)msg_buffer, cc, session_key_server, nonce_server);
+           if(challenge_handler(pkey_path, (unsigned char *)msg_buffer, cc, session_key_server, nonce_server) != 0){
+               continue;
+           }
         }
 
         // Se arrivo qua significa che il comando mandato al server non era tra quelli riconosciuti

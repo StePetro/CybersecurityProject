@@ -10,8 +10,8 @@ using namespace std;
 
 int sign(string prvkey_file_name, unsigned char* clear_buf, unsigned int clear_size, unsigned char*& sgnt_buf, unsigned int& sgnt_size) {
     // Restituisce 0 se ha successo, -1 altrimenti
-    // ATTENZIONE: ricordarsi di deallocare sgnt_buf con "delete[]" 
-    
+    // ATTENZIONE: ricordarsi di deallocare sgnt_buf con "delete[]"
+
     int ret;  // used for return values
 
     // load my private key:
@@ -83,6 +83,45 @@ int verify_sign(string pubkey_file_name, unsigned char* clear_buf, unsigned int 
         cerr << "Error: PEM_read_PUBKEY returned NULL\n";
         return -1;
     }
+
+    // declare some useful variables:
+    const EVP_MD* md = EVP_sha256();
+
+    // create the signature context:
+    EVP_MD_CTX* md_ctx = EVP_MD_CTX_new();
+    if (!md_ctx) {
+        cerr << "Error: EVP_MD_CTX_new returned NULL\n";
+        return -1;
+    }
+
+    // verify the plaintext:
+    // (perform a single update on the whole plaintext,
+    // assuming that the plaintext is not huge)
+    ret = EVP_VerifyInit(md_ctx, md);
+    if (ret == 0) {
+        cerr << "Error: EVP_VerifyInit returned " << ret << "\n";
+        return -1;
+    }
+    ret = EVP_VerifyUpdate(md_ctx, clear_buf, clear_size);
+    if (ret == 0) {
+        cerr << "Error: EVP_VerifyUpdate returned " << ret << "\n";
+        return -1;
+    }
+    ret = EVP_VerifyFinal(md_ctx, sgnt_buf, sgnt_size, pubkey);
+    if (ret != 1) {  // it is 0 if invalid signature, -1 if some other error, 1 if success.
+        cerr << "Error: EVP_VerifyFinal returned " << ret << " (invalid signature?)\n";
+        return -1;
+    }
+
+    // deallocate buffers:
+    EVP_PKEY_free(pubkey);
+    EVP_MD_CTX_free(md_ctx);
+
+    return 0;
+}
+
+int verify_sign(EVP_PKEY* pubkey, unsigned char* clear_buf, unsigned int clear_size, unsigned char* sgnt_buf, unsigned int sgnt_size) {
+    int ret;  // used for return values
 
     // declare some useful variables:
     const EVP_MD* md = EVP_sha256();

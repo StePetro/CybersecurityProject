@@ -2,7 +2,7 @@
 
 #include <bitset>
 
-#define NONCE_SIZE 16
+#define NONCE_SIZE 32
 
 std::bitset<NONCE_SIZE * 8> bitwise_add_one(std::bitset<NONCE_SIZE * 8> a) {
     // Somma 1 al bitset

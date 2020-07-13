@@ -30,7 +30,6 @@ using namespace std;
 #define MAX_PENDING_CONNECTIONS 3
 #define CERTIFICATE_PATH "PEM/server_certificate.pem"
 #define PRKEY_PATH "PEM/server_private_key.pem"
-#define NONCE_SIZE 16  // 128 bit
 
 int send_encrypted(unsigned char *plaintext, unsigned int plaintext_len,
                    unsigned char *aad, int aad_len,
@@ -59,20 +58,22 @@ int send_encrypted(unsigned char *plaintext, unsigned int plaintext_len,
     return 0;
 }
 
-void close_socket_logged(int socket_id, int *client_socket, Json::Value users, Json::Value socket_slots, unsigned char **session_key_list, unsigned char **nonce_list, int i) {
+void close_socket_logged(int socket_id, int *client_socket, Json::Value users, Json::Value logged_users, unsigned char **session_key_list, unsigned char **nonce_list, int i) {
     close(socket_id);
     client_socket[i] = 0;
     //Toglie l'utente disconnesso dalla lista
-    users[socket_slots[i].asString()]["IP"] = {};
-    users[socket_slots[i].asString()]["PORT"] = {};
-    socket_slots[i] = {};
+    users[logged_users[i].asString()]["IP"] = {};
+    users[logged_users[i].asString()]["PORT"] = {};
+    users[logged_users[i].asString()]["READY"] = false;
+    users[logged_users[i].asString()]["i"] = {};
+    logged_users[i] = {};
 #pragma optimize("", off)
     memset(nonce_list[i], 0, NONCE_SIZE);
     memset(session_key_list[i], 0, SESSION_KEY_SIZE);
 #pragma optimize("", on)
 }
 
-int read_encrypted(char *buffer, unsigned int bytes_read, unsigned char *&decrypted_msg, unsigned int& decrypted_msg_len, unsigned char **nonce_list, Json::Value users, unsigned char **session_key_list, int i, int socket_id, int *client_socket, Json::Value socket_slots) {
+int read_encrypted(char *buffer, unsigned int bytes_read, unsigned char *&decrypted_msg, unsigned int &decrypted_msg_len, unsigned char **nonce_list, Json::Value users, unsigned char **session_key_list, int i, int socket_id, int *client_socket, Json::Value socket_slots) {
     // setta decrypted_msg e decrypted_msg_len, ritorna 0 se ha successo, -1 altrimenti
 
     nonce_add_one(nonce_list[i]);

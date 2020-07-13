@@ -105,8 +105,6 @@ int derive_session_key(EVP_PKEY *my_ecdhkey, EVP_PKEY *peer_pubkey, unsigned cha
         cout << "An error has occurred while dering the keys" << endl;
         return -1;
     }
-    printf("Here it is the shared secret: \n");
-    BIO_dump_fp(stdout, (const char *)shared_secret, shared_secret_len);
 
     // hash the shared secret
     EVP_MD_CTX* Hctx;
@@ -152,7 +150,7 @@ int serialize_pub_key(EVP_PKEY* ecdhkey, unsigned char*& buffer, unsigned int& s
         cout << "Problem! The size of the serialized public key lies outside a simple unsigned int" << endl;
         return -1;
     }
-    size = (unsigned int) pubkey_size;
+    size = (unsigned int) pubkey_size - 1;
     buffer = new unsigned char[size];
     memcpy(buffer, serialize_buffer, size);
 

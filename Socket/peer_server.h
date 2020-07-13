@@ -9,7 +9,7 @@
 
 // Il server o il peer in vece di server espongono sempre
 // la porta 8888 per permettere la connessione
-#define PORT 8888
+#define PORT_PEER_SERVER 8888
 #define MSG_MAX_LEN 4096
 
 class PeerServerConnection {
@@ -27,7 +27,6 @@ class PeerServerConnection {
             cerr << "Error in creating the socket" << endl;
             return -1;
         }
-
         // Forcefully attaching socket to the port 8080
         if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
                        &opt, sizeof(opt))) {
@@ -36,26 +35,24 @@ class PeerServerConnection {
         }
         address.sin_family = AF_INET;
         address.sin_addr.s_addr = INADDR_ANY;
-        address.sin_port = htons(PORT);
-
+        address.sin_port = htons(PORT_PEER_SERVER);
         // Forcefully attaching socket to the port 8080
         if (bind(server_fd, (struct sockaddr *)&address,
                  sizeof(address)) < 0) {
             cerr << "Bind failed" << endl;
             return -1;
         }
-
         if (listen(server_fd, 3) < 0) {
             cerr << "Error on the listen" << endl;
             return -1;
         }
-
+        cout << "1" << endl;
         if ((new_socket = accept(server_fd, (struct sockaddr *)&address,
                                  (socklen_t *)&addrlen)) < 0) {
             cerr << "Error on the accept" << endl;
             return -1;
         }
-
+        cout << "2" << endl;
         return 0;
     };
 
@@ -67,6 +64,17 @@ class PeerServerConnection {
         }
         return 0;
     };
+
+     int send_msg(unsigned char const *msg, unsigned int size) {
+        // Invia il messaggio
+        if (send(new_socket, msg, size, 0) < size) {
+            cerr << "\nSent fewer bytes than expected \n"
+                 << endl;
+            return -1;
+        }
+        return 0;
+    };
+
 
     int read_msg(unsigned char *buffer) {
         // Copia il messaggio nel buffer, aggiunge il carattere
