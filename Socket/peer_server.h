@@ -65,7 +65,7 @@ class PeerServerConnection {
         return 0;
     };
 
-     int send_msg(unsigned char const *msg, unsigned int size) {
+    int send_msg(unsigned char const *msg, unsigned int size) {
         // Invia il messaggio
         if (send(new_socket, msg, size, 0) < size) {
             cerr << "\nSent fewer bytes than expected \n"
@@ -74,7 +74,6 @@ class PeerServerConnection {
         }
         return 0;
     };
-
 
     int read_msg(unsigned char *buffer) {
         // Copia il messaggio nel buffer, aggiunge il carattere

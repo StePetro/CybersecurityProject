@@ -9,6 +9,7 @@
 
 #include "../Authenticated_Encription/gcm.h"
 #include "../Certificate/certificate_verifier.h"
+#include "../Game/Game.h"
 #include "../Key_Exchange/DHKE.h"
 #include "../Nonce/nonce_operations.h"
 #include "../Signature/signer.h"
@@ -22,6 +23,183 @@
 #define CRL "PEM/crl.pem"
 
 using namespace std;
+
+int play_server(PeerServerConnection &psc, unsigned char *session_key, unsigned char *msg_buffer) {
+    cout << "Start of the game!" << endl;
+
+    // Il nonce parte da 0
+    unsigned char *nonce = new unsigned char[NONCE_SIZE];
+#pragma optimize("", off)
+    memset(nonce, 0, NONCE_SIZE);
+#pragma optimize("", on)
+
+    unsigned char *decrypted_msg;
+    unsigned int decrypted_msg_len;
+
+    Game g;
+    char **board = g.createBoard();
+    size_t column;
+    size_t bytes_read;
+
+    g.printBoard(board);
+
+    while (true) {
+        cout << "Waiting adversary move..." << endl;
+        // ricevi mossa avversario
+        if ((bytes_read = psc.read_msg((unsigned char *)msg_buffer)) == 0) {
+            cerr << "Adversary disconnected" << endl;
+            return -1;
+        }
+
+        nonce_add_one(nonce);
+        if (memcmp(msg_buffer + IV_LEN, nonce, NONCE_SIZE) != 0) {
+            cerr << "Wrong nonce, aborting connection..." << endl;
+            return -1;
+        }
+
+        if (gcm_decrypt((unsigned char *)msg_buffer, bytes_read, NONCE_SIZE, session_key, decrypted_msg, decrypted_msg_len) != 0) {
+            cerr << "A problem has occurred while decrypting the message. \n Aborting connection..." << endl;
+            return -1;
+        }
+
+        memcpy(&column, decrypted_msg, decrypted_msg_len);
+
+        // inseriscila nel campo
+        if (!g.insertPiece(board, 'X', column)) {
+            cout << "Received invalid move" << endl;
+            return -1;
+        }
+
+        g.printBoard(board);
+
+        if (g.checkWin(board, 'X')) {
+            cout << "Ha vinto l'avversario" << endl;
+            break;
+        }
+        if (g.isBoardFull(board)) {
+            cout << "Pareggio" << endl;
+            break;
+        }
+
+        // sfidato
+        column = g.nextMove(board, 'O');
+        g.printBoard(board);
+
+        // invia colonna mossa
+        memcpy(msg_buffer, &column, sizeof(size_t));
+        unsigned char *final_msg;
+        unsigned int final_msg_len;
+        nonce_add_one(nonce);
+        gcm_encrypt(msg_buffer, sizeof(size_t), nonce, NONCE_SIZE, session_key, final_msg, final_msg_len);
+        if (psc.send_msg(final_msg, final_msg_len) != 0) {
+            cout << "Send Error" << endl;
+            return -1;
+        }
+
+        if (g.checkWin(board, 'O')) {
+            cout << "Hai vinto" << endl;
+            break;
+        }
+        if (g.isBoardFull(board)) {
+            cout << "Pareggio" << endl;
+            break;
+        }
+    }
+
+    cout << "Chiusura gioco..." << endl;
+
+    g.deleteBoard(board);
+
+    return 0;
+}
+
+int play_client(PeerClientConnection &pcc, unsigned char *session_key, unsigned char *msg_buffer) {
+    cout << "Start of the game!" << endl;
+
+    Game g;
+    char **board = g.createBoard();
+    size_t column;
+    size_t bytes_read;
+    unsigned char *nonce = new unsigned char[NONCE_SIZE];
+    unsigned char *encrypted_buff;
+    unsigned char *decrypted_msg;
+    unsigned int decrypted_msg_len;
+
+#pragma optimize("", off)
+    memset(nonce, 0, NONCE_SIZE);
+#pragma optimize("", on)
+
+    g.printBoard(board);
+
+    while (true) {
+        // sfidato
+        column = g.nextMove(board, 'X');
+        g.printBoard(board);
+
+        // invia colonna mossa
+        memcpy(msg_buffer, &column, sizeof(size_t));
+        unsigned char *final_msg;
+        unsigned int final_msg_len;
+        nonce_add_one(nonce);
+        gcm_encrypt(msg_buffer, sizeof(size_t), nonce, NONCE_SIZE, session_key, final_msg, final_msg_len);
+        if (pcc.send_msg(final_msg, final_msg_len) != 0) {
+            cout << "Send Error" << endl;
+            return -1;
+        }
+
+        if (g.checkWin(board, 'X')) {
+            cout << "Hai vinto" << endl;
+            break;
+        }
+        if (g.isBoardFull(board)) {
+            cout << "Pareggio" << endl;
+            break;
+        }
+        cout << "Waiting adversary move..." << endl;
+        // ricevi mossa avversario
+        if ((bytes_read = pcc.read_msg(msg_buffer)) == 0) {
+            cerr << "Adversary disconnected" << endl;
+            return -1;
+        }
+
+        nonce_add_one(nonce);
+        if (memcmp(msg_buffer + IV_LEN, nonce, NONCE_SIZE) != 0) {
+            cerr << "Wrong nonce, aborting connection..." << endl;
+            return -1;
+        }
+
+        if (gcm_decrypt((unsigned char *)msg_buffer, bytes_read, NONCE_SIZE, session_key, decrypted_msg, decrypted_msg_len) != 0) {
+            cerr << "A problem has occurred while decrypting the message. \n Aborting connection..." << endl;
+            return -1;
+        }
+
+        
+        memcpy(&column, decrypted_msg, decrypted_msg_len);
+
+        // inseriscila nel campo
+        if (!g.insertPiece(board, 'O', column)) {
+            cout << "Received invalid move" << endl;
+            return -1;
+        }
+
+        g.printBoard(board);
+
+        if (g.checkWin(board, 'O')) {
+            cout << "Ha vinto l'avversario" << endl;
+            break;
+        }
+        if (g.isBoardFull(board)) {
+            cout << "Pareggio" << endl;
+            break;
+        }
+    }
+
+    cout << "Chiusura gioco..." << endl;
+
+    g.deleteBoard(board);
+
+    return 0;
+}
 
 // CERTICATO ------------------------------------------------------------------------------------------------------------------------------
 
@@ -69,7 +247,7 @@ int cert_handler(unsigned char *msg_buffer, PeerClientConnection &cc) {
 
 // LOGIN ------------------------------------------------------------------------------------------------------------------------------
 
-int login_handler(string &prkey_path, unsigned char *msg_buffer, PeerClientConnection &cc, unsigned char *&session_key_server, string user) {
+int login_handler(string &pkey_path, unsigned char *msg_buffer, PeerClientConnection &cc, unsigned char *&session_key_server, string user) {
     long bytes_read = 0;
 
     // Lettura risposta server alla /login:[nome_utente]
@@ -136,10 +314,10 @@ int login_handler(string &prkey_path, unsigned char *msg_buffer, PeerClientConne
         ifstream users_file("private_users.json", ifstream::binary);
         users_file >> users;
 
-        prkey_path = users[user]["priv_key"].asString();
+        pkey_path = users[user]["priv_key"].asString();
 
         // Firma: sig(nonce_s)
-        if (sign(prkey_path, nonce_s, NONCE_SIZE, signed_msg, signed_msg_size) != 0) {
+        if (sign(pkey_path, nonce_s, NONCE_SIZE, signed_msg, signed_msg_size) != 0) {
             return -1;
         }
 
@@ -225,7 +403,7 @@ int login_handler(string &prkey_path, unsigned char *msg_buffer, PeerClientConne
 
             // Firma digitale di (nonce_s || pubk_c) (nel buffer)
             signed_msg_size = 0;
-            if (sign(prkey_path, (unsigned char *)msg_buffer + sizeof(uint32_t), NONCE_SIZE + public_key_client_buf_size, signed_msg, signed_msg_size) != 0) {
+            if (sign(pkey_path, (unsigned char *)msg_buffer + sizeof(uint32_t), NONCE_SIZE + public_key_client_buf_size, signed_msg, signed_msg_size) != 0) {
                 cerr << "Not able to sign" << endl;
                 return -1;
             }
@@ -256,11 +434,8 @@ int login_handler(string &prkey_path, unsigned char *msg_buffer, PeerClientConne
 
 // Key exchange for the client
 
-int session_key_peer_client_negotiation(string prkey_path, unsigned char *&session_key_peer, unsigned char *IP_challenger, EVP_PKEY *pubkey_challenger, unsigned char *msg_buffer) {
+int session_key_peer_client_negotiation(string pkey_path, unsigned char *&session_key_peer, unsigned char *IP_challenger, EVP_PKEY *pubkey_challenger, unsigned char *msg_buffer, PeerClientConnection &pcc) {
     unsigned int bytes_read;
-
-    PeerClientConnection pcc;
-    pcc.initialization((const char *)IP_challenger, PORT_PEER_SERVER);
 
     // Mi deve arrivare (sgn_size || nonce_s || pubk_s || sgn(pubk_s))
     if ((bytes_read = pcc.read_msg(msg_buffer)) == 0) {
@@ -327,7 +502,7 @@ int session_key_peer_client_negotiation(string prkey_path, unsigned char *&sessi
     // firmare sgn(nonce_s || pub_key_c)
     unsigned char *signed_buff;
     unsigned int signed_len = 0;
-    if (sign(prkey_path, (unsigned char *)msg_buffer, NONCE_SIZE + public_key_client_buf_size, signed_buff, signed_len) != 0) {
+    if (sign(pkey_path, (unsigned char *)msg_buffer, NONCE_SIZE + public_key_client_buf_size, signed_buff, signed_len) != 0) {
         cerr << "Not able to sign" << endl;
         return -1;
     }
@@ -341,21 +516,15 @@ int session_key_peer_client_negotiation(string prkey_path, unsigned char *&sessi
         return -1;
     }
 
-    // Mi deve arrivare (sgn(nonce_c))
+    // lettura nonce_c firmato
     if ((bytes_read = pcc.read_msg(msg_buffer)) == 0) {
         cerr << "Peer disconnected" << endl;
         return -1;
     }
 
-    cout << "Nonce da verificare: " << endl;
-
     BIO_dump_fp(stdout, (const char *)msg_buffer, bytes_read);
 
-    cout << "Nonce nostro: " << endl;
-
-    BIO_dump_fp(stdout, (const char *)nonce_c, NONCE_SIZE);
-
-    // Controlla la firma, chiude la connessione se sbagliata buffer = (sgn(nonce_c))
+    // verifica nonce_c
     if (verify_sign(pubkey_challenger, nonce_c, NONCE_SIZE, msg_buffer, bytes_read) != 0) {
         cerr << "Wrong signature" << endl;
         return -1;
@@ -371,8 +540,7 @@ int session_key_peer_client_negotiation(string prkey_path, unsigned char *&sessi
         return -1;
     }
 
-    cout << "FIN QUI TUTTO BENE" << endl;
-
+    delete[] public_key_server_buf;
     delete[] nonce_c;
     delete[] nonce_s;
 
@@ -381,7 +549,7 @@ int session_key_peer_client_negotiation(string prkey_path, unsigned char *&sessi
 
 // FIND ------------------------------------------------------------------------------------------------------------------------------
 
-int find_handler(string prkey_path, unsigned char *msg_buffer, PeerClientConnection &cc, unsigned char *session_key_server, unsigned char *nonce_server) {
+int find_handler(string pkey_path, unsigned char *msg_buffer, PeerClientConnection &cc, unsigned char *session_key_server, unsigned char *nonce_server) {
     // gestisce la ricerca di uno sfidante
 
     long bytes_read = 0;
@@ -485,8 +653,15 @@ int find_handler(string prkey_path, unsigned char *msg_buffer, PeerClientConnect
         // Per sicurezza, in modo che il server vada prima in ascolto
         sleep(1);
 
-        if (session_key_peer_client_negotiation(prkey_path, session_key_peer, IP_challenger, pubkey_challenger, msg_buffer) != 0) {
+        PeerClientConnection pcc;
+        pcc.initialization((const char *)IP_challenger, PORT_PEER_SERVER);
+
+        if (session_key_peer_client_negotiation(pkey_path, session_key_peer, IP_challenger, pubkey_challenger, msg_buffer, pcc) != 0) {
             cerr << "Error in negotiating session key with peer" << endl;
+            return -1;
+        }
+
+        if(play_client(pcc, session_key_peer, msg_buffer) != 0){
             return -1;
         }
     }
@@ -502,10 +677,8 @@ int find_handler(string prkey_path, unsigned char *msg_buffer, PeerClientConnect
 }
 
 // Negoziazione chiave di sessione tra peer, lato peer-server ------------------------------------------------------------------------------------------------------
-int session_key_peer_server_negotiation(string prkey_path, unsigned char *&session_key, EVP_PKEY *pubkey_challenged, unsigned char *msg_buffer) {
+int session_key_peer_server_negotiation(PeerServerConnection &psc, string pkey_path, unsigned char *&session_key, EVP_PKEY *pubkey_challenged, unsigned char *msg_buffer) {
     unsigned int bytes_read;
-    PeerServerConnection psc;
-    psc.initialization();
     unsigned char *nonce_s = new unsigned char[NONCE_SIZE];
     unsigned char *nonce_c = new unsigned char[NONCE_SIZE];
 
@@ -539,7 +712,7 @@ int session_key_peer_server_negotiation(string prkey_path, unsigned char *&sessi
     unsigned char *signed_buff;
     unsigned int signed_len = 0;
     // buff = ( _____ || nonce_s || pubk_s || _____ )
-    if (sign(prkey_path, (unsigned char *)msg_buffer + sizeof(uint32_t) + NONCE_SIZE, public_key_server_buf_size, signed_buff, signed_len) != 0) {
+    if (sign(pkey_path, (unsigned char *)msg_buffer + sizeof(uint32_t) + NONCE_SIZE, public_key_server_buf_size, signed_buff, signed_len) != 0) {
         cerr << "Not able to sign" << endl;
         return -1;
     }
@@ -583,29 +756,25 @@ int session_key_peer_server_negotiation(string prkey_path, unsigned char *&sessi
         return -1;
     }
 
-    // Deserializza la chiave pubblica effimera del client
-    EVP_PKEY *pub_key_client = NULL;
-    deserialize_pub_key(pubk_c_buffer, pubk_c_len, pub_key_client);
-
-    // Calcola la chiave di sessione
-    if (derive_session_key(keys_server, pub_key_client, session_key) != 0) {
-        cerr << "Session key cannot be derived" << endl;
-        return -1;
-    }
-
-    //mandare firma nonce_c
+    // Firma nonce
     unsigned char *signed_nonce_c;
     unsigned int signed_nonce_c_len = 0;
-    if (sign(prkey_path, nonce_c, NONCE_SIZE, signed_nonce_c, signed_nonce_c_len) != 0) {
+    if (sign(pkey_path, nonce_c, NONCE_SIZE, signed_nonce_c, signed_nonce_c_len) != 0) {
         cerr << "Not able to sign" << endl;
         return -1;
     }
 
-    BIO_dump_fp(stdout, (const char *)nonce_c, NONCE_SIZE);
-    BIO_dump_fp(stdout, (const char *)signed_nonce_c, signed_nonce_c_len);
-
-    // Invio messaggio = (sgn(nonce_c))
     if (psc.send_msg(signed_nonce_c, signed_nonce_c_len) != 0) {
+        return -1;
+    }
+
+    // Deserializza la chiave pubblica effimera del client
+    EVP_PKEY *pub_key_client = NULL;
+    deserialize_pub_key((unsigned char *)pubk_c_buffer, pubk_c_len, pub_key_client);
+
+    // Calcola la chiave di sessione
+    if (derive_session_key(keys_server, pub_key_client, session_key) != 0) {
+        cerr << "Session key cannot be derived" << endl;
         return -1;
     }
 
@@ -622,7 +791,7 @@ int session_key_peer_server_negotiation(string prkey_path, unsigned char *&sessi
 
 // CHALLENGE ------------------------------------------------------------------------------------------------------------------------------
 
-int challenge_handler(string prkey_path, unsigned char *msg_buffer, PeerClientConnection &cc, unsigned char *session_key_server, unsigned char *nonce_server) {
+int challenge_handler(string pkey_path, unsigned char *msg_buffer, PeerClientConnection &cc, unsigned char *session_key_server, unsigned char *nonce_server) {
     unsigned int bytes_read;
 
     if ((bytes_read = cc.read_msg((unsigned char *)msg_buffer)) == 0) {
@@ -676,12 +845,22 @@ int challenge_handler(string prkey_path, unsigned char *msg_buffer, PeerClientCo
 
     cout << "pem size " << size_PEM << endl;
 
-    // Scambio chiavi e inizio partita -----------------------------------------------------------------------------------
+    // Scambio chiavi  -----------------------------------------------------------------------------------
 
     unsigned char *session_key;
 
-    if (session_key_peer_server_negotiation(prkey_path, session_key, pubkey_challenged, msg_buffer) != 0) {
+    // Connessione con l'altro peer
+    PeerServerConnection psc;
+    psc.initialization();
+
+    if (session_key_peer_server_negotiation(psc, pkey_path, session_key, pubkey_challenged, msg_buffer) != 0) {
         cerr << "Error in negotiating session key with peer" << endl;
+        return -1;
+    }
+
+    // Inizio partita -----------------------------------------------------------------------------------
+
+    if (play_server(psc, session_key, msg_buffer) != 0){
         return -1;
     }
 

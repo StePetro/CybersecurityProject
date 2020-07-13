@@ -62,17 +62,18 @@ class Game{
           }
 
          // this function takes care of reading the column safely and inserting the new piece in the board
-          void nextMove(char** board, char piece){
+          size_t nextMove(char** board, char piece){
 
                size_t column;
                bool success = false;
 
                do{
-                    cout << "(Giocatore " << piece << ") Inserisci colonna: ";
+                    cout <<  "Insert move: (" << piece << ")";
                     column = readColumn();
                     success = insertPiece(board, piece, column);
                }
                while(!success);// reads a new column until a piece is successfully inserted
+               return column;
           }
 
 
@@ -148,6 +149,22 @@ class Game{
                return true;
           }
 
+          bool insertPiece(char** board, char piece, size_t column){
+
+               // starting from the bottom row, I look for a free spot in the selected column
+               for (size_t i = 0; i < HEIGHT; i++) {
+
+                    if(board[i][column] == ' '){
+                         board[i][column] = piece;
+                         return true;
+                    }
+               }
+               // no free spot available
+               cout << "Colonna Piena" << endl;
+               return false;
+         }
+
+
      private:
 
           // we have to be careful with how we read the column number
@@ -177,26 +194,12 @@ class Game{
           }
 
 
-         bool insertPiece(char** board, char piece, size_t column){
-
-               // starting from the bottom row, I look for a free spot in the selected column
-               for (size_t i = 0; i < HEIGHT; i++) {
-
-                    if(board[i][column] == ' '){
-                         board[i][column] = piece;
-                         return true;
-                    }
-               }
-               // no free spot available
-               cout << "Colonna Piena" << endl;
-               return false;
-         }
-
 };
 
 
 
 // main di prova con 2 giocatori locali
+/*
 int main(){
 
      Game g;
@@ -241,3 +244,4 @@ int main(){
      g.deleteBoard(board);
 
 }
+*/

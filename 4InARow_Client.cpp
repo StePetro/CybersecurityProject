@@ -66,7 +66,7 @@ main(int argc, char const *argv[]) {
         }
 
         // Gestione richiesta di cercare uno sfidante
-        if (msg.compare("/find") == 0 ) {
+        if (msg.compare("/find") == 0 && session_key_server != NULL) {
             cout << "I'm looking for a challenger..." << endl;
             if (find_handler(pkey_path, (unsigned char *)msg_buffer, cc, session_key_server, nonce_server) != 0) {
                 // notifico errore, oppure rifiuto da parte dello sfidato
@@ -75,11 +75,10 @@ main(int argc, char const *argv[]) {
         }
 
         // Gestione richiesta di cercare uno sfidante
-        if (msg.compare(0, string("/challenge:").size(), "/challenge:") == 0 ) {
+        if (msg.compare(0, string("/challenge:").size(), "/challenge:") == 0 && session_key_server != NULL) {
             cout << "Waiting response..." << endl;
-           if(challenge_handler(pkey_path, (unsigned char *)msg_buffer, cc, session_key_server, nonce_server) != 0){
-               continue;
-           }
+            challenge_handler(pkey_path, (unsigned char *)msg_buffer, cc, session_key_server, nonce_server);
+            continue;
         }
 
         // Se arrivo qua significa che il comando mandato al server non era tra quelli riconosciuti
@@ -94,20 +93,19 @@ main(int argc, char const *argv[]) {
         if (session_key_server != NULL) {
             unsigned char *decrypted_msg;
             unsigned int decrypted_msg_len;
+
+            // il nonce va incrementato ad ogni invio e ricezione di un nuovo messaggio, poi lo controlliamo
+            nonce_add_one(nonce_server);
+            if (memcmp(msg_buffer + IV_LEN, nonce_server, NONCE_SIZE) != 0) {
+                cerr << "Wrong nonce, aborting connection" << endl;
+                break;
+            }
+
             if (gcm_decrypt((unsigned char *)msg_buffer, bytes_read, NONCE_SIZE, session_key_server, decrypted_msg, decrypted_msg_len) != 0) {
                 cerr << "A problem has occurred while decrypting the message. \n Aborting connection..." << endl;
                 break;
             }
 
-            // il nonce va incrementato ad ogni invio e ricezione di un nuovo messaggio, poi lo controlliamo
-            //cout << "Dopo read" << endl;
-            nonce_add_one(nonce_server);
-            //BIO_dump_fp(stdout, (const char *)nonce_server, NONCE_SIZE);
-            // Se il nonce è sbagliato chiude la connessione
-            if (memcmp(msg_buffer + IV_LEN, nonce_server, NONCE_SIZE) != 0) {
-                cerr << "Wrong nonce, aborting connection" << endl;
-                break;
-            }
             cout << decrypted_msg << endl;
         } else {
             cout << msg_buffer << endl;

@@ -153,7 +153,7 @@ int verify_sign(EVP_PKEY* pubkey, unsigned char* clear_buf, unsigned int clear_s
     }
 
     // deallocate buffers:
-    EVP_PKEY_free(pubkey);
+    //EVP_PKEY_free(pubkey);
     EVP_MD_CTX_free(md_ctx);
 
     return 0;
