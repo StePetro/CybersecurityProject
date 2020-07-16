@@ -23,8 +23,7 @@ int main(int argc, char *argv[]) {
 #pragma optimize("", off)
         memset(nonce_list[i], 0, NONCE_SIZE);
 #pragma optimize("", on)
-        //cout << i <<endl;
-        //BIO_dump_fp(stdout, (const char *)nonce_list[i], NONCE_SIZE);
+        
     }
 
     char buffer[MSG_MAX_LEN];  //data buffer of 1K
@@ -61,7 +60,7 @@ int main(int argc, char *argv[]) {
         perror("bind failed");
         exit(EXIT_FAILURE);
     }
-    printf("Listener on port %d \n", PORT);
+    cout << "Listener on port "<< PORT << endl;
 
     //try to specify maximum of MAX_PENDING_CONNECTIONS pending connections for the master socket
     if (listen(master_socket, MAX_PENDING_CONNECTIONS) < 0) {
@@ -100,7 +99,7 @@ int main(int argc, char *argv[]) {
         activity = select(max_sd + 1, &readfds, NULL, NULL, NULL);
 
         if ((activity < 0) && (errno != EINTR)) {
-            printf("select error");
+            cerr << "select error" << endl;
         }
 
         //If something happened on the master socket ,
@@ -162,10 +161,10 @@ int main(int argc, char *argv[]) {
                         users[logged_users[i].asString()]["READY"] = {};
                         users[logged_users[i].asString()]["i"] = {};
                         logged_users[i] = {};
-#pragma optimize("", off)
+                        #pragma optimize("", off)
                         memset(nonce_list[i], 0, NONCE_SIZE);
                         memset(session_key_list[i], 0, SESSION_KEY_SIZE);
-#pragma optimize("", on)
+                        #pragma optimize("", on)
                     }
                 } else {                        // Risposta del server
                     buffer[bytes_read] = '\0';  // ATTENZIONE: Aggiunge il carattere di fine stringa
@@ -201,9 +200,9 @@ int main(int argc, char *argv[]) {
                         if (login_handler(socket_id, users, logged_users, buffer, address, addrlen, socket_list, i, session_key_list) == 0) {
                             // Parte da 0 con il nonce e lo incrementa da ora in poi
 
-#pragma optimize("", off)
+                            #pragma optimize("", off)
                             memset(nonce_list[i], 0, NONCE_SIZE);
-#pragma optimize("", on)
+                            #pragma optimize("", on)
                             continue;
                         }
                         // Se il login fallisce

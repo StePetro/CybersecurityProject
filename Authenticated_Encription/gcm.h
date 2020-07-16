@@ -162,34 +162,4 @@ int gcm_decrypt(unsigned char *msg_buffer, unsigned int msg_len,
     }
 }
 
-/*
-int main(void) {
-    unsigned char msg[] = "Short message ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd 11111111111111111111111111111111111111111111111111111111  0000000000  ijnoooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooijnijnijnijniiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiidskfvwrfkndvorwfndvwfvmlllllllllllllllllllllllllllllllllllllllllllllllllllasfcewrkeckkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkwerfvjrewjfdvnrfkvnm,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,wevmrwfkvmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmfekomweomvoermkvokervffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff@";
-    //create key
-    unsigned char key_gcm[] = "123456789012345dvsrfvfdvf6";
-    unsigned char iv_gcm[] = "123456780912";
-    unsigned char *cphr_buf;
-    unsigned char *tag_buf;
-    unsigned int cphr_len;
-    unsigned int dec_len;
-    unsigned char* risposta;
-    unsigned int risposta_len;
-    unsigned int pt_len = sizeof(msg);
 
-    // IV casuale
-    RAND_poll();
-    unsigned char *nonce = new unsigned char[32];
-    RAND_bytes((unsigned char *)&nonce[0], 32);
-
-    gcm_encrypt(msg, pt_len, nonce,32,key_gcm,risposta,risposta_len);
-    cout << "MSG:";
-    cout << risposta_len << endl;
-    BIO_dump_fp(stdout, (const char *)risposta, risposta_len);
-    unsigned char *dec_buf;
-    gcm_decrypt(risposta,risposta_len,32,key_gcm,dec_buf);
-    cout << "PT:" << endl;
-    BIO_dump_fp(stdout, (const char *)dec_buf, pt_len);
-    return 0;
-}
-
-*/

@@ -46,7 +46,7 @@ main(int argc, char const *argv[]) {
         }
 
         // A seconda del comando inserito lo gestisco in maniera appropriata
-        // Gestione richiesta certificato
+        // Gestione richiesta login (solo se l'utente è loggato)
         if (msg.compare(0, string("/login:").size(), "/login:") == 0 && session_key_server == NULL) {
             if (login_handler(pkey_path, (unsigned char *)msg_buffer, cc, session_key_server, msg.substr(msg.find(":") + 1)) != 0) {
                 cerr << "Login failed" << endl;
@@ -56,14 +56,14 @@ main(int argc, char const *argv[]) {
         }
 
         // Gestione richiesta certificato
-        if (msg.compare("/cert") == 0) {
+        if (msg.compare("/cert") == 0 && session_key_server == NULL) {
             if (cert_handler((unsigned char *)msg_buffer, cc) != 0) {
                 cerr << "Certificate NOT verified" << endl;
             }
             continue;
         }
 
-        // Gestione richiesta di cercare uno sfidante
+        // Gestione richiesta di cercare uno sfidante (solo se l'utente è loggato)
         if (msg.compare("/find") == 0 && session_key_server != NULL) {
             cout << "I'm looking for a challenger..." << endl;
             if (find_handler(pkey_path, (unsigned char *)msg_buffer, cc, session_key_server, nonce_server) != 0) {
@@ -72,7 +72,7 @@ main(int argc, char const *argv[]) {
             }
         }
 
-        // Gestione richiesta di cercare uno sfidante
+        // Gestione richiesta di cercare uno sfidante (solo se l'utente è loggato)
         if (msg.compare(0, string("/challenge:").size(), "/challenge:") == 0 && session_key_server != NULL) {
             cout << "Waiting response..." << endl;
             challenge_handler(pkey_path, (unsigned char *)msg_buffer, cc, session_key_server, nonce_server);

@@ -73,7 +73,7 @@ int play_server(PeerServerConnection &psc, unsigned char *session_key, unsigned 
         g.printBoard(board);
 
         if (g.checkWin(board, 'X')) {
-            cout << "You won" << endl;
+            cout << "The adversary won" << endl;
             break;
         }
         if (g.isBoardFull(board)) {
@@ -81,7 +81,7 @@ int play_server(PeerServerConnection &psc, unsigned char *session_key, unsigned 
             break;
         }
 
-        // sfidato
+        // leggo la mia mossa
         column = g.nextMove(board, 'O');
         g.printBoard(board);
 
@@ -344,6 +344,35 @@ int login_handler(string &pkey_path, unsigned char *msg_buffer, PeerClientConnec
         tmp = "ACK";
         if (strncmp((const char *)msg_buffer, tmp.c_str(), tmp.length()) == 0) {
             //INIZIO NEGOZIAZIONE CHIAVE DI SESSIONE -------------------------------------------------------------------------
+
+            // Ricezione messaggio = (sgn_len || y_s || sgn(nonce_c || y_s))
+            if ((bytes_read = cc.read_msg(msg_buffer)) == 0) {
+                cerr << "Server disconnected" << endl;
+                return -1;
+            }
+
+            // Prelevo la dimensione della firma
+            uint32_t SGN_SIZE = 0;
+            memcpy(&SGN_SIZE, msg_buffer, sizeof(uint32_t));
+
+            // Costruisco (nonce_c || y_s)
+            unsigned int nc_ys_len = NONCE_SIZE + bytes_read - SGN_SIZE - sizeof(uint32_t);
+            unsigned char *nc_ys = new unsigned char[nc_ys_len];
+            memcpy(nc_ys, nonce_c, NONCE_SIZE);
+            memcpy(nc_ys + NONCE_SIZE, msg_buffer + sizeof(uint32_t), bytes_read - SGN_SIZE - sizeof(uint32_t));
+
+            // Controlla la firma, chiude la connessione se sbagliata buffer = (sgn_len || y_s || sgn(nonce_c || y_s))
+            if (cv.verify_signed_file(msg_buffer + bytes_read - SGN_SIZE, SGN_SIZE, nc_ys, nc_ys_len, CERT_SAVE_PATH) != 1) {
+                cerr << "Wrong signature" << endl;
+                return -1;
+            }
+            delete[] nc_ys;
+
+            // Deserializza la chiave pubblica effimera del client
+            EVP_PKEY *pub_key_server = NULL;
+            deserialize_pub_key((unsigned char *)msg_buffer + sizeof(uint32_t), bytes_read - SGN_SIZE - sizeof(uint32_t), pub_key_server);
+
+            // Strutture dati DH
             EVP_PKEY *keys_client = NULL;  // Sia privata che pubblica
             unsigned char *public_key_client_buf = NULL;
             unsigned int public_key_client_buf_size;
@@ -358,37 +387,32 @@ int login_handler(string &pkey_path, unsigned char *msg_buffer, PeerClientConnec
             if (serialize_pub_key(keys_client, public_key_client_buf, public_key_client_buf_size) != 0) {
                 cerr << "Error in parameters' creation" << endl;
                 return -1;
-            }
+            };
 
-            // Incremento di 1 i due nonce
-            nonce_add_one(nonce_s);
-            nonce_add_one(nonce_c);
+            // ( nonce_s  || y_c)
+            unsigned int ns_yc_len = NONCE_SIZE + public_key_client_buf_size;
+            unsigned char *ns_yc = new unsigned char[ns_yc_len];
+            memcpy(ns_yc, nonce_s, NONCE_SIZE);
+            memcpy(ns_yc + NONCE_SIZE, public_key_client_buf, public_key_client_buf_size);
 
-            // Ricezione messaggio = (sgn_len || nonce_c || pubk_s || sgn(nonce_c || pubk_s))
-            if ((bytes_read = cc.read_msg(msg_buffer)) == 0) {
-                cerr << "Server disconnected" << endl;
+            // Firma digitale di (nonce_s || y_c)
+            signed_msg_size = 0;
+            if (sign(pkey_path, ns_yc, ns_yc_len, signed_msg, signed_msg_size) != 0) {
+                cerr << "Not able to sign" << endl;
                 return -1;
             }
+            delete[] ns_yc;
 
-            // Se il nonce è sbagliato chiude la connessione
-            if (memcmp(msg_buffer + sizeof(uint32_t), nonce_c, NONCE_SIZE) != 0) {
-                cerr << "Wrong nonce" << endl;
+            // (sgn_len || pubk_c || sgn(--))
+            memcpy(msg_buffer, &signed_msg_size, sizeof(uint32_t));
+            memcpy(msg_buffer + sizeof(uint32_t), public_key_client_buf, public_key_client_buf_size);
+            memcpy(msg_buffer + sizeof(uint32_t) + public_key_client_buf_size, signed_msg, signed_msg_size);
+
+            // Invio messaggio = (sgn_len || pubk_c || sgn(nonce_s || pubk_c))
+            if (cc.send_msg(msg_buffer, sizeof(uint32_t) + public_key_client_buf_size + signed_msg_size) != 0) {
+                cerr << "Error in sending the message" << endl;
                 return -1;
             }
-
-            // Prelevo la dimensione della firma
-            uint32_t SGN_SIZE = 0;
-            memcpy(&SGN_SIZE, msg_buffer, sizeof(uint32_t));
-
-            // Controlla la firma, chiude la connessione se sbagliata buffer = (sgn_len || nonce_c || pubk_s || sgn(nonce_c || pubk_s))
-            if (cv.verify_signed_file(msg_buffer + bytes_read - SGN_SIZE, SGN_SIZE, msg_buffer + sizeof(uint32_t), bytes_read - SGN_SIZE - +sizeof(uint32_t), CERT_SAVE_PATH) != 1) {
-                cerr << "Wrong signature" << endl;
-                return -1;
-            }
-
-            // Deserializza la chiave pubblica effimera del client
-            EVP_PKEY *pub_key_server = NULL;
-            deserialize_pub_key((unsigned char *)msg_buffer + NONCE_SIZE + sizeof(uint32_t), bytes_read - SGN_SIZE - NONCE_SIZE - sizeof(uint32_t), pub_key_server);
 
             // Calcola la chiave di sessione
             if (derive_session_key(keys_client, pub_key_server, session_key_server) != 0) {
@@ -396,28 +420,7 @@ int login_handler(string &pkey_path, unsigned char *msg_buffer, PeerClientConnec
                 return -1;
             }
 
-            // ( _____ || nonce_s || pubk_c)
-            memcpy(msg_buffer + sizeof(uint32_t), nonce_s, NONCE_SIZE);
-            memcpy(msg_buffer + sizeof(uint32_t) + NONCE_SIZE, public_key_client_buf, public_key_client_buf_size);
-
-            // Firma digitale di (nonce_s || pubk_c) (nel buffer)
-            signed_msg_size = 0;
-            if (sign(pkey_path, (unsigned char *)msg_buffer + sizeof(uint32_t), NONCE_SIZE + public_key_client_buf_size, signed_msg, signed_msg_size) != 0) {
-                cerr << "Not able to sign" << endl;
-                return -1;
-            }
-
-            // ( sgn_len || nonce_s || pubk_c)
-            memcpy(msg_buffer, &signed_msg_size, sizeof(uint32_t));
-
-            // Invio messaggio = (sgn_len || nonce_s || pubk_c || sgn(nonce_s || pubk_c))
-            memcpy(msg_buffer + sizeof(uint32_t) + NONCE_SIZE + public_key_client_buf_size, signed_msg, signed_msg_size);
-            if (cc.send_msg(msg_buffer, sizeof(uint32_t) + NONCE_SIZE + public_key_client_buf_size + signed_msg_size) != 0) {
-                cerr << "Error in sending the message" << endl;
-                return -1;
-            }
-
-            // Salvo il nonce e svuoto la memoria
+            // Svuoto la memoria
             cout << "Login completed successfully" << endl;
             delete[] signed_msg;
             delete[] nonce_c;
@@ -434,36 +437,17 @@ int login_handler(string &pkey_path, unsigned char *msg_buffer, PeerClientConnec
 int session_key_peer_client_negotiation(string pkey_path, unsigned char *&session_key_peer, unsigned char *IP_challenger, EVP_PKEY *pubkey_challenger, unsigned char *msg_buffer, PeerClientConnection &pcc) {
     unsigned int bytes_read;
 
-    // Mi deve arrivare (sgn_size || nonce_s || pubk_s || sgn(pubk_s))
+    // Mi deve arrivare (nonce_s)
     if ((bytes_read = pcc.read_msg(msg_buffer)) == 0) {
         cerr << "Peer disconnected" << endl;
         return -1;
     }
 
-    uint32_t size_sign_pubk_s = 0;
-    // recupero size della firma (sgn_size || nonce_s || pubk_s || sgn(pubk_s)
-    memcpy(&size_sign_pubk_s, msg_buffer, sizeof(uint32_t));
-
     unsigned char *nonce_c = new unsigned char[NONCE_SIZE];
     unsigned char *nonce_s = new unsigned char[NONCE_SIZE];
 
-    // recupero nonce server (sgn_size || nonce_s || pubk_s || sgn(pubk_s)
-    memcpy(nonce_s, msg_buffer + sizeof(uint32_t), NONCE_SIZE);
-
-    EVP_PKEY *public_key_server = NULL;  // solo chiave pubblica del server
-    unsigned int public_key_server_buf_size = bytes_read - NONCE_SIZE - sizeof(uint32_t) - size_sign_pubk_s;
-    unsigned char *public_key_server_buf = new unsigned char[public_key_server_buf_size];
-
-    //(sgn_size || nonce_s || pubk_s || sgn(pubk_s)
-    memcpy(public_key_server_buf, msg_buffer + sizeof(uint32_t) + NONCE_SIZE, public_key_server_buf_size);
-
-    deserialize_pub_key(public_key_server_buf, public_key_server_buf_size, public_key_server);
-
-    // Controlla la firma, chiude la connessione se sbagliata buffer = (sgn_len || nonce_c || pubk_s || sgn(pubk_s))
-    if (verify_sign(pubkey_challenger, public_key_server_buf, public_key_server_buf_size, msg_buffer + bytes_read - size_sign_pubk_s, size_sign_pubk_s) != 0) {
-        cerr << "Wrong signature" << endl;
-        return -1;
-    }
+    // recupero nonce server
+    memcpy(nonce_s, msg_buffer, NONCE_SIZE);
 
     // genero nonce client
     RAND_poll();
@@ -479,10 +463,6 @@ int session_key_peer_client_negotiation(string pkey_path, unsigned char *&sessio
         cerr << "Error in parameters' creation" << endl;
         return -1;
     }
-
-    uint32_t size_sign_pubk_c = 0;
-
-    // (sgn_len || nonce_c || pub_key_c || sgn(nonce_s || pub_key_c) )
 
     // Serializzazione chiave pubblica client in un buffer
     if (serialize_pub_key(keys_client, public_key_client_buf, public_key_client_buf_size) != 0) {
@@ -502,7 +482,7 @@ int session_key_peer_client_negotiation(string pkey_path, unsigned char *&sessio
         return -1;
     }
 
-    // (sgn_len || nonce_c || pub_key_c || signed buff )
+    // invio (sgn_len || nonce_c || pub_key_c || signed buff )
     memcpy(msg_buffer, &signed_len, sizeof(uint32_t));
     memcpy(msg_buffer + sizeof(uint32_t), nonce_c, NONCE_SIZE);
     memcpy(msg_buffer + sizeof(uint32_t) + NONCE_SIZE, public_key_client_buf, public_key_client_buf_size);
@@ -511,21 +491,32 @@ int session_key_peer_client_negotiation(string pkey_path, unsigned char *&sessio
         return -1;
     }
 
-    // lettura nonce_c firmato
+    // Ricezione messaggio = (sgn_len || y_s || sgn(nonce_c || y_s))
     if ((bytes_read = pcc.read_msg(msg_buffer)) == 0) {
-        cerr << "Peer disconnected" << endl;
+        cerr << "Server disconnected" << endl;
         return -1;
     }
 
-    // verifica nonce_c
-    if (verify_sign(pubkey_challenger, nonce_c, NONCE_SIZE, msg_buffer, bytes_read) != 0) {
+    // Prelevo la dimensione della firma
+    uint32_t SGN_SIZE = 0;
+    memcpy(&SGN_SIZE, msg_buffer, sizeof(uint32_t));
+
+    // Costruisco (nonce_c || y_s)
+    unsigned int nc_ys_len = NONCE_SIZE + bytes_read - SGN_SIZE - sizeof(uint32_t);
+    unsigned char *nc_ys = new unsigned char[nc_ys_len];
+    memcpy(nc_ys, nonce_c, NONCE_SIZE);
+    memcpy(nc_ys + NONCE_SIZE, msg_buffer + sizeof(uint32_t), bytes_read - SGN_SIZE - sizeof(uint32_t));
+
+    // Controlla la firma, chiude la connessione se sbagliata buffer = (sgn_len || y_s || sgn(nonce_c || y_s))
+    if (verify_sign(pubkey_challenger, nc_ys, nc_ys_len, msg_buffer + bytes_read - SGN_SIZE, SGN_SIZE) != 0) {
         cerr << "Wrong signature" << endl;
         return -1;
     }
+    delete[] nc_ys;
 
     // Deserializza la chiave pubblica effimera del server
     EVP_PKEY *pub_key_server = NULL;
-    deserialize_pub_key((unsigned char *)public_key_server_buf, public_key_server_buf_size, pub_key_server);
+    deserialize_pub_key((unsigned char *)msg_buffer + sizeof(uint32_t), bytes_read - SGN_SIZE - sizeof(uint32_t), pub_key_server);
 
     // Calcola la chiave di sessione
     if (derive_session_key(keys_client, pub_key_server, session_key_peer) != 0) {
@@ -533,7 +524,6 @@ int session_key_peer_client_negotiation(string pkey_path, unsigned char *&sessio
         return -1;
     }
 
-    delete[] public_key_server_buf;
     delete[] nonce_c;
     delete[] nonce_s;
 
@@ -637,7 +627,7 @@ int find_handler(string pkey_path, unsigned char *msg_buffer, PeerClientConnecti
         //deserializzo il pem
         deserialize_pub_key(PEM_pubkey_challenger, size_PEM, pubkey_challenger);
 
-        //INIZIO PARTITA_____
+        //INIZIO Negoziazione session key
 
         unsigned char *session_key_peer;
 
@@ -677,43 +667,8 @@ int session_key_peer_server_negotiation(PeerServerConnection &psc, string pkey_p
     RAND_poll();
     RAND_bytes((unsigned char *)&nonce_s[0], NONCE_SIZE);
 
-    EVP_PKEY *keys_server = NULL;  // Sia privata che pubblica
-    unsigned char *public_key_server_buf = NULL;
-    unsigned int public_key_server_buf_size;
-
-    // Creazione chiavi effimere da parametri standard
-    if (create_ephemeral_keys(keys_server) != 0) {
-        cerr << "Error in parameters' creation" << endl;
-        return -1;
-    }
-
-    // Serializzazione chiave pubblica server in un buffer
-    if (serialize_pub_key(keys_server, public_key_server_buf, public_key_server_buf_size) != 0) {
-        cerr << "Error in parameters' creation" << endl;
-        return -1;
-    }
-
-    // ( sgn_size || nonce_s || pubk_s || sgn(pubk_s))
-
-    // ( _____ || nonce_s || pubk_s || _____ ) <-- per ora ho messo
-    memcpy(msg_buffer + sizeof(uint32_t), nonce_s, NONCE_SIZE);
-    memcpy(msg_buffer + sizeof(uint32_t) + NONCE_SIZE, public_key_server_buf, public_key_server_buf_size);
-
-    // Firma digitale di (pubk_s) (nel buffer)
-    unsigned char *signed_buff;
-    unsigned int signed_len = 0;
-    // buff = ( _____ || nonce_s || pubk_s || _____ )
-    if (sign(pkey_path, (unsigned char *)msg_buffer + sizeof(uint32_t) + NONCE_SIZE, public_key_server_buf_size, signed_buff, signed_len) != 0) {
-        cerr << "Not able to sign" << endl;
-        return -1;
-    }
-
-    // ( sgn_len || nonce_c || pubk_s || _____)
-    memcpy(msg_buffer, &signed_len, sizeof(uint32_t));
-
-    // Invio messaggio = (sgn_len || nonce_c || pubk_s || sgn(nonce_c || pubk_s))
-    memcpy(msg_buffer + sizeof(uint32_t) + NONCE_SIZE + public_key_server_buf_size, signed_buff, signed_len);
-    if (psc.send_msg(msg_buffer, sizeof(uint32_t) + NONCE_SIZE + public_key_server_buf_size + signed_len) != 0) {
+    // Invio messaggio = (nonce_s)
+    if (psc.send_msg(nonce_s, NONCE_SIZE) != 0) {
         return -1;
     }
 
@@ -746,15 +701,46 @@ int session_key_peer_server_negotiation(PeerServerConnection &psc, string pkey_p
         return -1;
     }
 
-    // Firma nonce
-    unsigned char *signed_nonce_c;
-    unsigned int signed_nonce_c_len = 0;
-    if (sign(pkey_path, nonce_c, NONCE_SIZE, signed_nonce_c, signed_nonce_c_len) != 0) {
-        cerr << "Not able to sign" << endl;
+    // Strutture dati per DH
+    EVP_PKEY *keys_server = NULL;  // Sia privata che pubblica
+    unsigned char *public_key_server_buf = NULL;
+    unsigned int public_key_server_buf_size;
+
+    // Creazione chiavi effimere da parametri standard
+    if (create_ephemeral_keys(keys_server) != 0) {
+        cerr << "Error in parameters' creation" << endl;
         return -1;
     }
 
-    if (psc.send_msg(signed_nonce_c, signed_nonce_c_len) != 0) {
+    // Serializzazione chiave pubblica server in un buffer
+    if (serialize_pub_key(keys_server, public_key_server_buf, public_key_server_buf_size) != 0) {
+        cerr << "Error in parameters' creation" << endl;
+        return -1;
+    }
+
+    // ( nonce_c  || y_s)
+    unsigned int nc_ys_len = NONCE_SIZE + public_key_server_buf_size;
+    unsigned char *nc_ys = new unsigned char[nc_ys_len];
+    memcpy(nc_ys, nonce_c, NONCE_SIZE);
+    memcpy(nc_ys + NONCE_SIZE, public_key_server_buf, public_key_server_buf_size);
+
+    // Firma digitale di (nonce_c || y_s)
+    unsigned int signed_msg_size = 0;
+    unsigned char *signed_msg;
+    if (sign(pkey_path, nc_ys, nc_ys_len, signed_msg, signed_msg_size) != 0) {
+        cerr << "Not able to sign" << endl;
+        return -1;
+    }
+    delete[] nc_ys;
+
+    // (sgn_len || y_s || sgn(--))
+    memcpy(msg_buffer, &signed_msg_size, sizeof(uint32_t));
+    memcpy(msg_buffer + sizeof(uint32_t), public_key_server_buf, public_key_server_buf_size);
+    memcpy(msg_buffer + sizeof(uint32_t) + public_key_server_buf_size, signed_msg, signed_msg_size);
+
+    // Invio messaggio = (sgn_len || pubk_s || sgn(nonce_c || pubk_s))
+    if (psc.send_msg(msg_buffer, sizeof(uint32_t) + public_key_server_buf_size + signed_msg_size) != 0) {
+        cerr << "Error in sending the message" << endl;
         return -1;
     }
 

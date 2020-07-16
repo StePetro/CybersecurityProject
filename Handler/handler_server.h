@@ -163,32 +163,32 @@ int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, cha
         return -1;
     }
 
-    // Incremento di 1 i due nonce
-    nonce_add_one(nonce_s);
-    nonce_add_one(nonce_c);
+    // Costruisco (nonce_c || y_s)
+    unsigned int nc_ys_len = NONCE_SIZE + public_key_server_buf_size;
+    unsigned char *nc_ys = new unsigned char[nc_ys_len];
+    memcpy(nc_ys, nonce_c, NONCE_SIZE);
+    memcpy(nc_ys + NONCE_SIZE, public_key_server_buf, public_key_server_buf_size);
 
-    // ( _____ || nonce_c || pubk_s)
-    memcpy(buffer + sizeof(uint32_t), nonce_c, NONCE_SIZE);
-    memcpy(buffer + sizeof(uint32_t) + NONCE_SIZE, public_key_server_buf, public_key_server_buf_size);
-
-    // Firma digitale di (nonce_c || pubk_s) (nel buffer)
+    // Firma digitale di (nonce_c || y_s)
     signed_len = 0;
-    if (sign(PRKEY_PATH, (unsigned char *)buffer + sizeof(uint32_t), NONCE_SIZE + public_key_server_buf_size, signed_buff, signed_len) != 0) {
+    if (sign(PRKEY_PATH, nc_ys, nc_ys_len, signed_buff, signed_len) != 0) {
         cerr << "Not able to sign" << endl;
         return -1;
     }
+    delete[] nc_ys;
 
-    // ( sgn_len || nonce_c || pubk_s)
+    // (sgn_len || y_s || sgn(--))
     memcpy(buffer, &signed_len, sizeof(uint32_t));
+    memcpy(buffer + sizeof(uint32_t), public_key_server_buf, public_key_server_buf_size);
+    memcpy(buffer + sizeof(uint32_t) + public_key_server_buf_size, signed_buff, signed_len);
 
-    // Invio messaggio = (sgn_len || nonce_c || pubk_s || sgn(nonce_c || pubk_s))
-    memcpy(buffer + sizeof(uint32_t) + NONCE_SIZE + public_key_server_buf_size, signed_buff, signed_len);
-    if (send(socket, buffer, sizeof(uint32_t) + NONCE_SIZE + public_key_server_buf_size + signed_len, 0) != sizeof(uint32_t) + NONCE_SIZE + public_key_server_buf_size + signed_len) {
+    // Invio messaggio = (sgn_len || y_s || sgn(nonce_c || pubk_s))
+    if (send(socket, buffer, sizeof(uint32_t) + public_key_server_buf_size + signed_len, 0) != sizeof(uint32_t) + public_key_server_buf_size + signed_len) {
         cerr << "Error in sending the message" << endl;
         return -1;
     }
 
-    // Ricezione messaggio = (sgn_len || nonce_s || pubk_c || sgn(nonce_s || pubk_c))
+    // Ricezione messaggio = (sgn_len || y_c || sgn(nonce_s || pubk_c))
     if ((bytes_read = read(socket, buffer, MSG_MAX_LEN)) == 0) {
         // Disconnessione, print delle informazioni
         getpeername(socket, (struct sockaddr *)&address, (socklen_t *)&addrlen);
@@ -202,25 +202,26 @@ int login_handler(int socket, Json::Value &users, Json::Value &socket_slots, cha
         return -1;
     }
 
-    // Se il nonce è sbagliato chiude la connessione
-    if (memcmp(buffer + sizeof(uint32_t), nonce_s, NONCE_SIZE) != 0) {
-        cerr << "Wrong nonce" << endl;
-        return -1;
-    }
-
     // Prelevo la dimensione della firma
     uint32_t SGN_SIZE = 0;
     memcpy(&SGN_SIZE, buffer, sizeof(uint32_t));
 
+    // (nonce_s || pubk_c)
+    unsigned int ns_yc_len = NONCE_SIZE + bytes_read - SGN_SIZE - sizeof(uint32_t);
+    unsigned char *ns_yc = new unsigned char[ns_yc_len];
+    memcpy(ns_yc, nonce_s, NONCE_SIZE);
+    memcpy(ns_yc + NONCE_SIZE, buffer + sizeof(uint32_t), bytes_read - SGN_SIZE - sizeof(uint32_t));
+
     // Controlla la firma, chiude la connessione se sbagliata, buff = (sgn_len || nonce_s || pubk_c || sgn(nonce_s || pubk_c))
-    if (verify_sign(users[username]["pub_key"].asString(), (unsigned char *)buffer + sizeof(uint32_t), bytes_read - SGN_SIZE - sizeof(uint32_t), (unsigned char *)buffer + bytes_read - SGN_SIZE, SGN_SIZE) != 0) {
+    if (verify_sign(users[username]["pub_key"].asString(), ns_yc, ns_yc_len, (unsigned char *)buffer + bytes_read - SGN_SIZE, SGN_SIZE) != 0) {
         cerr << "Wrong signature" << endl;
         return -1;
     }
+    delete[] ns_yc;
 
-    // Deserializza la chiave pubblica effimera del client, buff = (sgn_len || nonce_s || pubk_c || sgn(nonce_s || pubk_c))
+    // Deserializza la chiave pubblica effimera del client, buff = (sgn_len  || pubk_c || sgn(nonce_s || pubk_c))
     EVP_PKEY *pub_key_client = NULL;
-    deserialize_pub_key((unsigned char *)buffer + NONCE_SIZE + sizeof(uint32_t), bytes_read - SGN_SIZE - NONCE_SIZE - sizeof(uint32_t), pub_key_client);
+    deserialize_pub_key((unsigned char *)buffer + sizeof(uint32_t), bytes_read - SGN_SIZE - sizeof(uint32_t), pub_key_client);
 
     // Calcola la chiave di sessione
     unsigned char *session_key;
@@ -283,7 +284,6 @@ int challenge_handler(char *buffer, int i, int socket_id, int *socket_list, unsi
         if (y.compare(0, y.length(), (const char *)decrypted_msg) == 0) {
             // Verso lo sfidato
             // formato messaggio (len IP || IP || PEM public key sfidante)
-            cout << "Sono entrato nella sfida accettata" << endl;
 
             // Invio dati del challenged al challenger ----------------------------
             string ip = users[challenged]["IP"].asString();
