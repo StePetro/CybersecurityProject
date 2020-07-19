@@ -343,8 +343,8 @@ int login_handler(string &pkey_path, unsigned char *msg_buffer, PeerClientConnec
         // Firma del client valida
         tmp = "ACK";
         if (strncmp((const char *)msg_buffer, tmp.c_str(), tmp.length()) == 0) {
-            //INIZIO NEGOZIAZIONE CHIAVE DI SESSIONE -------------------------------------------------------------------------
-
+            //INIZIO NEGOZIAZIONE CHIAVE DI SESSIONE -------------------------------------------------------------------------            
+            sleep(1);
             // Ricezione messaggio = (sgn_len || y_s || sgn(nonce_c || y_s))
             if ((bytes_read = cc.read_msg(msg_buffer)) == 0) {
                 cerr << "Server disconnected" << endl;
