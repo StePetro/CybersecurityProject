@@ -274,6 +274,13 @@ int login_handler(string &pkey_path, unsigned char *msg_buffer, PeerClientConnec
     if (strncmp((const char *)msg_buffer, tmp.c_str(), tmp.length()) == 0) {
         cout << "Authenticating..." << endl;
 
+        // Verifica certificato
+        CertificateVerifier cv;
+        if (cv.verify_server_certificate(CERT_SAVE_PATH, CA_CERT, CRL) != 1) {
+            cerr << "Server certificate NOT valid, aborting connection..." << endl;
+            exit(1);
+        }
+
         // Generazione nonce_c del client casuale
         RAND_poll();
         unsigned char *nonce_c = new unsigned char[NONCE_SIZE];
@@ -296,7 +303,6 @@ int login_handler(string &pkey_path, unsigned char *msg_buffer, PeerClientConnec
         memcpy(nonce_s, msg_buffer, NONCE_SIZE);
 
         // Verifico sig(noncec) con il certificato del server
-        CertificateVerifier cv;
         if (cv.verify_signed_file(msg_buffer + NONCE_SIZE, bytes_read - NONCE_SIZE, nonce_c, NONCE_SIZE, CERT_SAVE_PATH) == 1) {
             cout << "Correct server signature" << endl;
         } else {
@@ -343,7 +349,7 @@ int login_handler(string &pkey_path, unsigned char *msg_buffer, PeerClientConnec
         // Firma del client valida
         tmp = "ACK";
         if (strncmp((const char *)msg_buffer, tmp.c_str(), tmp.length()) == 0) {
-            //INIZIO NEGOZIAZIONE CHIAVE DI SESSIONE -------------------------------------------------------------------------            
+            //INIZIO NEGOZIAZIONE CHIAVE DI SESSIONE -------------------------------------------------------------------------
             sleep(1);
             // Ricezione messaggio = (sgn_len || y_s || sgn(nonce_c || y_s))
             if ((bytes_read = cc.read_msg(msg_buffer)) == 0) {
